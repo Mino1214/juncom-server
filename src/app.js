@@ -5,10 +5,28 @@ import redis from "./redis.js";
 import pg from "pg";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 
 // 환경변수 로드
 dotenv.config();
 
+// 업로드 폴더 생성
+const uploadDir = "uploads";
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir);
+}
+
+// multer 설정
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname);
+        cb(null, `product-${Date.now()}${ext}`);
+    }
+});
+const upload = multer({ storage });
 const app = express();
 const { Pool } = pg;
 
@@ -923,7 +941,77 @@ app.patch("/api/admin/products/:id/status", verifyToken, requireRole("admin"), a
         client.release();
     }
 });
+// PUT /api/admin/products/:id
+app.put(
+    "/api/admin/products/:id",
+    verifyToken,
+    requireRole("admin"),
+    upload.single("image"), // 👈 프론트에서 보내는 file 필드 이름은 "image"
+    async (req, res) => {
+        const client = await pool.connect();
 
+        try {
+            const { id } = req.params;
+            const {
+                name,
+                price,
+                stock,
+                description,
+                release_date,
+                is_visible
+            } = req.body;
+
+            // 파일이 있을 경우 URL 생성 (정적 URL로 접근 가능하도록)
+            let imageUrl = null;
+            if (req.file) {
+                // 서버 기준 상대경로
+                imageUrl = `https://jimo.world/api/uploads/${req.file.filename}`;
+            }
+
+            const query = `
+                UPDATE products
+                SET 
+                    name = COALESCE($1, name),
+                    price = COALESCE($2, price),
+                    stock = COALESCE($3, stock),
+                    description = COALESCE($4, description),
+                    release_date = COALESCE($5, release_date),
+                    is_visible = COALESCE($6, is_visible),
+                    emoji = COALESCE($7, emoji),
+                    updated_at = NOW()
+                WHERE id = $8
+                RETURNING *;
+            `;
+
+            const result = await client.query(query, [
+                name || null,
+                price || null,
+                stock || null,
+                description || null,
+                release_date || null,
+                is_visible ? true : false,
+                imageUrl, // emoji 대신 썸네일용
+                id
+            ]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ message: "상품을 찾을 수 없습니다." });
+            }
+
+            res.json({
+                message: "상품이 수정되었습니다.",
+                product: result.rows[0]
+            });
+        } catch (error) {
+            console.error("Update product error:", error);
+            res.status(500).json({ message: "상품 수정 중 오류 발생" });
+        } finally {
+            client.release();
+        }
+    }
+);
+
+app.use("/api/uploads", express.static("uploads"));
 const PORT = 5000;
 app.listen(PORT, async () => {
     console.log(`\n🚀 Server running at http://localhost:${PORT}\n`);
