@@ -4,6 +4,7 @@ import cors from "cors";
 import redis from "./redis.js";
 import pg from "pg";
 import dotenv from "dotenv";
+import jwt from "jsonwebtoken";
 
 // 환경변수 로드
 dotenv.config();
