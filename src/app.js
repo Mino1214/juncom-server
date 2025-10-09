@@ -13,7 +13,7 @@ const { Pool } = pg;
 
 // PostgreSQL 연결
 const pool = new Pool({
-    host: process.env.DB_HOST || 'localhost',
+    host: process.env.DB_HOST || 'jimo.world',
     port: parseInt(process.env.DB_PORT || '5432'),
     database: process.env.DB_NAME || 'postgres',
     user: process.env.DB_USER || 'postgres',
@@ -27,7 +27,7 @@ const pool = new Pool({
 console.log('📊 DB Config:', {
     host: process.env.DB_HOST || 'localhost',
     port: process.env.DB_PORT || '5432',
-    database: process.env.DB_NAME || 'postgres',
+    database: process.env.DB_NAME || 'employee_mall',
     user: process.env.DB_USER || 'postgres',
     ssl: process.env.DB_HOST !== 'localhost' ? 'enabled' : 'disabled'
 });
