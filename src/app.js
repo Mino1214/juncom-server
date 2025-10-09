@@ -222,16 +222,22 @@ app.post("/api/auth/kakao", async (req, res) => {
         }
 
         if (user) {
-            // 기존 회원
-            res.json({
+            // ✅ 기존 회원 - JWT 토큰 발급
+            const token = generateToken(user);
+
+            return res.json({
                 isRegistered: true,
-                name: user.name,
-                employeeId: user.employee_id,
-                email: user.email
+                token,
+                user: {
+                    name: user.name,
+                    employeeId: user.employee_id,
+                    email: user.email,
+                    role: user.role
+                }
             });
         } else {
             // 신규 회원
-            res.json({
+            return res.json({
                 isRegistered: false,
                 kakaoName: name,
                 kakaoEmail: email
