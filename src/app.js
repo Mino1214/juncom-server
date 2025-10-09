@@ -510,7 +510,7 @@ app.post("/api/dev/create-test-user",  verifyToken, requireRole("admin"),async (
 });
 
 // Redis 캐시 초기화
-app.post("/api/dev/clear-cache", verifyToken, requireRole("admin"), async (req, res) => {
+app.post("/api/dev/clear-cache", verifyToken, async (req, res) => {
     try {
         await redis.flushDb();
         res.json({
