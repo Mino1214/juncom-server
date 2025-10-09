@@ -161,7 +161,7 @@ app.post("/api/auth/kakao", async (req, res) => {
             // 캐시에 없으면 DB 조회
             if (!user) {
                 const result = await client.query(
-                    'SELECT * FROM public.users WHERE employee_id = $1',
+                    'SELECT * FROM users WHERE employee_id = $1',
                     [cachedEmployeeId]
                 );
                 user = result.rows[0];
@@ -172,7 +172,7 @@ app.post("/api/auth/kakao", async (req, res) => {
         } else {
             // 2. DB에서 카카오 ID로 사용자 검색
             const result = await client.query(
-                'SELECT * FROM public.users WHERE kakao_id = $1',
+                'SELECT * FROM users WHERE kakao_id = $1',
                 [kakaoId]
             );
 
