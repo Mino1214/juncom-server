@@ -997,7 +997,9 @@ app.put(
             if (result.rows.length === 0) {
                 return res.status(404).json({ message: "상품을 찾을 수 없습니다." });
             }
-
+// ✅ 캐시 무효화 (상품 전체 목록 캐시 삭제)
+            await redis.del("products:all");
+            await redis.del(`product:${id}`);
             res.json({
                 message: "상품이 수정되었습니다.",
                 product: result.rows[0]
