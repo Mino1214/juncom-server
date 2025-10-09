@@ -480,7 +480,7 @@ app.post("/api/dev/clear-cache", async (req, res) => {
 // ============================================
 // 서버 시작
 // ============================================
-const PORT = 3000;
+const PORT = 5000;
 app.listen(PORT, async () => {
     console.log(`\n🚀 Server running at http://localhost:${PORT}\n`);
 
