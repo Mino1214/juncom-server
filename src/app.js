@@ -784,81 +784,69 @@ app.post("/api/admin/products", verifyToken, requireRole("admin"), async (req, r
         client.release();
     }
 });
-
-app.put("/api/admin/products/:id", verifyToken, requireRole("admin"), async (req, res) => {
+// 관리자 상품 등록
+app.post("/api/admin/products", verifyToken, requireRole("admin"), async (req, res) => {
     const client = await pool.connect();
-
     try {
-        const { id } = req.params;
-        const { name, spec, price, stock, emoji, description, features, detailImages } = req.body;
+        const {
+            name, spec, price, stock, emoji, description,
+            features, detailImages, releaseDate
+        } = req.body;
 
-        const result = await client.query(
-            `UPDATE products
-             SET name = COALESCE($1, name),
-                 spec = COALESCE($2, spec),
-                 price = COALESCE($3, price),
-                 stock = COALESCE($4, stock),
-                 emoji = COALESCE($5, emoji),
-                 description = COALESCE($6, description),
-                 features = COALESCE($7, features),
-                 detail_images = COALESCE($8, detail_images),
-                 updated_at = NOW()
-             WHERE id = $9
-             RETURNING *`,
-            [name, spec, price, stock, emoji, description, features, detailImages, id]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: "상품을 찾을 수 없습니다." });
+        if (!name || !price) {
+            return res.status(400).json({ message: "상품명과 가격은 필수입니다." });
         }
 
-        res.json({ message: "상품이 수정되었습니다.", product: result.rows[0] });
+        const result = await client.query(
+            `INSERT INTO products (
+                name, spec, price, stock, emoji, description, features, detail_images, release_date, status, created_at, updated_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'draft',NOW(),NOW())
+             RETURNING *`,
+            [name, spec || '', price, stock || 0, emoji || '', description || '', features || [], detailImages || [], releaseDate || null]
+        );
 
+        res.status(201).json({ message: "상품이 등록되었습니다.", product: result.rows[0] });
     } catch (error) {
-        console.error("Update product error:", error);
-        res.status(500).json({ message: "상품 수정 중 오류가 발생했습니다." });
+        console.error("Create product error:", error);
+        res.status(500).json({ message: "상품 등록 중 오류가 발생했습니다." });
     } finally {
         client.release();
     }
 });
 
+// 상품 목록 조회
+app.get("/api/admin/products", verifyToken, requireRole("admin"), async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const result = await client.query(`SELECT * FROM products ORDER BY created_at DESC`);
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Get admin products error:", error);
+        res.status(500).json({ message: "상품 목록 조회 실패" });
+    } finally {
+        client.release();
+    }
+});
+
+// 재고 수정
 app.patch("/api/admin/products/:id/stock", verifyToken, requireRole("admin"), async (req, res) => {
     const client = await pool.connect();
-
     try {
         const { id } = req.params;
         const { stock } = req.body;
-
-        if (stock == null || isNaN(stock)) {
-            return res.status(400).json({ message: "유효한 재고 수량을 입력해주세요." });
-        }
-
-        const result = await client.query(
-            `UPDATE products
-             SET stock = $1,
-                 updated_at = NOW()
-             WHERE id = $2
-             RETURNING *`,
-            [stock, id]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: "상품을 찾을 수 없습니다." });
-        }
-
-        res.json({ message: "재고가 수정되었습니다.", product: result.rows[0] });
-
+        await client.query(`UPDATE products SET stock = $1, updated_at = NOW() WHERE id = $2`, [stock, id]);
+        res.json({ message: "재고 수정 완료" });
     } catch (error) {
         console.error("Update stock error:", error);
-        res.status(500).json({ message: "재고 수정 중 오류가 발생했습니다." });
+        res.status(500).json({ message: "재고 수정 실패" });
     } finally {
         client.release();
     }
 });
 
+// 출시일 설정
 app.patch("/api/admin/products/:id/release", verifyToken, requireRole("admin"), async (req, res) => {
     const client = await pool.connect();
-
     try {
         const { id } = req.params;
         const { releaseDate } = req.body;
@@ -873,111 +861,41 @@ app.patch("/api/admin/products/:id/release", verifyToken, requireRole("admin"), 
             [releaseDate, id]
         );
 
-        if (result.rows.length === 0) {
+        if (result.rows.length === 0)
             return res.status(404).json({ message: "상품을 찾을 수 없습니다." });
-        }
 
         res.json({ message: "출시일이 설정되었습니다.", product: result.rows[0] });
-
     } catch (error) {
         console.error("Set release date error:", error);
-        res.status(500).json({ message: "출시일 설정 중 오류가 발생했습니다." });
+        res.status(500).json({ message: "출시일 설정 중 오류" });
     } finally {
         client.release();
     }
 });
 
+// 판매 상태 변경 (표시/중지)
 app.patch("/api/admin/products/:id/status", verifyToken, requireRole("admin"), async (req, res) => {
     const client = await pool.connect();
-
     try {
         const { id } = req.params;
-        const { status } = req.body; // active | stopped | draft | scheduled
+        const { status } = req.body; // 'active' | 'stopped' | 'scheduled' | 'draft'
 
-        if (!["active", "stopped", "draft", "scheduled"].includes(status)) {
+        if (!["active", "stopped", "scheduled", "draft"].includes(status)) {
             return res.status(400).json({ message: "유효하지 않은 상태입니다." });
         }
 
         const result = await client.query(
             `UPDATE products
-             SET status = $1,
-                 updated_at = NOW()
+             SET status = $1, updated_at = NOW()
              WHERE id = $2
              RETURNING *`,
             [status, id]
         );
 
-        if (result.rows.length === 0) {
+        if (result.rows.length === 0)
             return res.status(404).json({ message: "상품을 찾을 수 없습니다." });
-        }
 
-        res.json({ message: "상태가 변경되었습니다.", product: result.rows[0] });
-
-    } catch (error) {
-        console.error("Update status error:", error);
-        res.status(500).json({ message: "상태 변경 중 오류가 발생했습니다." });
-    } finally {
-        client.release();
-    }
-});
-
-app.get("/api/admin/products", verifyToken, requireRole("admin"), async (req, res) => {
-    const client = await pool.connect();
-
-    try {
-        const result = await client.query(
-            `SELECT * FROM products ORDER BY created_at DESC`
-        );
-
-        res.json(result.rows);
-
-    } catch (error) {
-        console.error("Get admin products error:", error);
-        res.status(500).json({ message: "상품 목록 조회 중 오류가 발생했습니다." });
-    } finally {
-        client.release();
-    }
-});
-
-// ✅ 관리자 상품 목록
-app.get("/api/admin/products", verifyToken, requireRole("admin"), async (req, res) => {
-    const client = await pool.connect();
-    try {
-        const result = await client.query("SELECT * FROM products ORDER BY created_at DESC");
-        res.json(result.rows);
-    } catch (error) {
-        console.error("Get admin products error:", error);
-        res.status(500).json({ message: "상품 목록 조회 실패" });
-    } finally {
-        client.release();
-    }
-});
-
-// ✅ 재고 수정
-app.patch("/api/admin/products/:id/stock", verifyToken, requireRole("admin"), async (req, res) => {
-    const client = await pool.connect();
-    try {
-        const { id } = req.params;
-        const { stock } = req.body;
-        await client.query("UPDATE products SET stock = $1, updated_at = NOW() WHERE id = $2", [stock, id]);
-        res.json({ message: "재고 수정 완료" });
-    } catch (error) {
-        console.error("Update stock error:", error);
-        res.status(500).json({ message: "재고 수정 실패" });
-    } finally {
-        client.release();
-    }
-});
-
-// ✅ 판매 상태 변경
-app.patch("/api/admin/products/:id/status", verifyToken, requireRole("admin"), async (req, res) => {
-    const client = await pool.connect();
-    try {
-        const { id } = req.params;
-        const { status } = req.body;
-        await client.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'draft'");
-        await client.query("UPDATE products SET status = $1, updated_at = NOW() WHERE id = $2", [status, id]);
-        res.json({ message: "상태 변경 완료" });
+        res.json({ message: "상태 변경 완료", product: result.rows[0] });
     } catch (error) {
         console.error("Change status error:", error);
         res.status(500).json({ message: "상태 변경 실패" });
@@ -986,6 +904,26 @@ app.patch("/api/admin/products/:id/status", verifyToken, requireRole("admin"), a
     }
 });
 
+// 홈 노출용
+app.get("/api/products/visible", async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const now = new Date();
+        const result = await client.query(
+            `SELECT * FROM products
+             WHERE status = 'active'
+             AND (release_date IS NULL OR release_date <= $1)
+             ORDER BY release_date DESC`,
+            [now]
+        );
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Visible products error:", error);
+        res.status(500).json({ message: "상품 목록 조회 실패" });
+    } finally {
+        client.release();
+    }
+});
 const PORT = 5000;
 app.listen(PORT, async () => {
     console.log(`\n🚀 Server running at http://localhost:${PORT}\n`);
