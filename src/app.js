@@ -126,6 +126,26 @@ async function invalidateUserCache(employeeId) {
 // ============================================
 // 인증 API
 // ============================================
+// 홈 노출용
+app.get("/api/products/visible", async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const now = new Date();
+        const result = await client.query(
+            `SELECT * FROM products
+             WHERE status = 'active'
+             AND (release_date IS NULL OR release_date <= $1)
+             ORDER BY release_date DESC`,
+            [now]
+        );
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Visible products error:", error);
+        res.status(500).json({ message: "상품 목록 조회 실패" });
+    } finally {
+        client.release();
+    }
+});
 
 // 1. 일반 로그인 (사번/비밀번호)
 // 1. 일반 로그인 (사번/비밀번호)
@@ -904,26 +924,6 @@ app.patch("/api/admin/products/:id/status", verifyToken, requireRole("admin"), a
     }
 });
 
-// 홈 노출용
-app.get("/api/products/visible", async (req, res) => {
-    const client = await pool.connect();
-    try {
-        const now = new Date();
-        const result = await client.query(
-            `SELECT * FROM products
-             WHERE status = 'active'
-             AND (release_date IS NULL OR release_date <= $1)
-             ORDER BY release_date DESC`,
-            [now]
-        );
-        res.json(result.rows);
-    } catch (error) {
-        console.error("Visible products error:", error);
-        res.status(500).json({ message: "상품 목록 조회 실패" });
-    } finally {
-        client.release();
-    }
-});
 const PORT = 5000;
 app.listen(PORT, async () => {
     console.log(`\n🚀 Server running at http://localhost:${PORT}\n`);
