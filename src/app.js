@@ -44,7 +44,7 @@ function generateToken(user) {
     return jwt.sign(
         {
             employeeId: user.employee_id,
-            role: user.role || "user",
+            role: user.role,
             name: user.name
         },
         JWT_SECRET,
