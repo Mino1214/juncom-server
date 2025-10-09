@@ -977,7 +977,7 @@ app.put(
                     description = COALESCE($4, description),
                     release_date = COALESCE($5, release_date),
                     is_visible = COALESCE($6, is_visible),
-                    emoji = COALESCE($7, emoji),
+                    image_url = COALESCE($7, image_url),
                     updated_at = NOW()
                 WHERE id = $8
                 RETURNING *;
