@@ -31,6 +31,54 @@ console.log('📊 DB Config:', {
     user: process.env.DB_USER || 'postgres',
     ssl: process.env.DB_HOST !== 'localhost' ? 'enabled' : 'disabled'
 });
+const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey";
+const TOKEN_EXPIRES_IN = "6h"; // 6시간 유효
+
+// ===================================================
+// 🔐 JWT 헬퍼 함수
+// ===================================================
+
+// 토큰 생성
+function generateToken(user) {
+    return jwt.sign(
+        {
+            employeeId: user.employee_id,
+            role: user.role || "user",
+            name: user.name
+        },
+        JWT_SECRET,
+        { expiresIn: TOKEN_EXPIRES_IN }
+    );
+}
+
+// 토큰 검증 미들웨어
+function verifyToken(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        return res.status(401).json({ message: "토큰이 필요합니다." });
+    }
+
+    const token = authHeader.split(" ")[1];
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded; // req.user에 디코딩된 정보 저장
+        next();
+    } catch (error) {
+        return res.status(403).json({ message: "유효하지 않은 토큰입니다." });
+    }
+}
+
+// Role 검증 미들웨어
+function requireRole(role) {
+    return (req, res, next) => {
+        if (!req.user || req.user.role !== role) {
+            return res.status(403).json({ message: "권한이 없습니다." });
+        }
+        next();
+    };
+}
+
+
 
 // 미들웨어
 app.use(express.json());
@@ -79,64 +127,53 @@ async function invalidateUserCache(employeeId) {
 // ============================================
 
 // 1. 일반 로그인 (사번/비밀번호)
+// 1. 일반 로그인 (사번/비밀번호)
 app.post("/api/auth/login", async (req, res) => {
     const client = await pool.connect();
 
     try {
         const { employeeId, password } = req.body;
-
         if (!employeeId || !password) {
-            return res.status(400).json({
-                message: "사번과 비밀번호를 입력해주세요."
-            });
+            return res.status(400).json({ message: "사번과 비밀번호를 입력해주세요." });
         }
 
-        // 1. Redis 캐시 확인
         let user = await getUserFromCache(employeeId);
-
-        // 2. 캐시에 없으면 DB 조회
         if (!user) {
-            const result = await client.query(
-                'SELECT * FROM users WHERE employee_id = $1',
-                [employeeId]
-            );
-
+            const result = await client.query('SELECT * FROM users WHERE employee_id = $1', [employeeId]);
             if (result.rows.length === 0) {
-                return res.status(404).json({
-                    message: "등록되지 않은 사번입니다."
-                });
+                return res.status(404).json({ message: "등록되지 않은 사번입니다." });
             }
-
             user = result.rows[0];
-
-            // Redis에 캐싱
             await setUserCache(employeeId, user);
         }
 
-        // 비밀번호 확인 (실제로는 bcrypt 사용)
-        if (user.password !== password) {
-            return res.status(401).json({
-                message: "비밀번호가 일치하지 않습니다."
-            });
+        // 🔐 bcrypt로 비밀번호 비교
+        const validPassword = await bcrypt.compare(password, user.password);
+        if (!validPassword) {
+            return res.status(401).json({ message: "비밀번호가 일치하지 않습니다." });
         }
 
-        // 로그인 성공
+        // ✅ JWT 토큰 발급
+        const token = generateToken(user);
+
         res.json({
-            name: user.name,
-            employeeId: user.employee_id,
-            email: user.email
+            message: "로그인 성공",
+            token,
+            user: {
+                name: user.name,
+                employeeId: user.employee_id,
+                email: user.email,
+                role: user.role
+            }
         });
 
     } catch (error) {
         console.error("Login error:", error);
-        res.status(500).json({
-            message: "서버 오류가 발생했습니다."
-        });
+        res.status(500).json({ message: "서버 오류가 발생했습니다." });
     } finally {
         client.release();
     }
 });
-
 // 2. 카카오 로그인
 app.post("/api/auth/kakao", async (req, res) => {
     const client = await pool.connect();
@@ -241,11 +278,13 @@ app.post("/api/auth/signup", async (req, res) => {
         }
 
         // 2. DB에 사용자 정보 저장
+        const hashedPassword = password ? await bcrypt.hash(password, 10) : '';
+
         const insertResult = await client.query(
-            `INSERT INTO users (employee_id, password, name, email, phone, address, kakao_id, marketing_agreed, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-             RETURNING *`,
-            [employeeId, password || '', name, email || '', phone || '', address || '', kakaoId || null, marketingAgreed || false]
+            `INSERT INTO users (employee_id, password, name, email, phone, address, kakao_id, marketing_agreed, role, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+     RETURNING *`,
+            [employeeId, hashedPassword, name, email || '', phone || '', address || '', kakaoId || null, marketingAgreed || false, role || 'user']
         );
 
         const newUser = insertResult.rows[0];
@@ -279,7 +318,7 @@ app.post("/api/auth/signup", async (req, res) => {
 });
 
 // 4. 사용자 정보 조회
-app.get("/api/user/:employeeId", async (req, res) => {
+app.get("/api/user/:employeeId",verifyToken, async (req, res) => {
     const client = await pool.connect();
 
     try {
@@ -321,7 +360,7 @@ app.get("/api/user/:employeeId", async (req, res) => {
 });
 
 // 5. 사용자 정보 수정
-app.put("/api/user/:employeeId", async (req, res) => {
+app.put("/api/user/:employeeId",verifyToken, async (req, res) => {
     const client = await pool.connect();
 
     try {
@@ -376,24 +415,25 @@ app.put("/api/user/:employeeId", async (req, res) => {
 // ============================================
 
 // DB 테이블 생성
-app.post("/api/dev/init-db", async (req, res) => {
+app.post("/api/dev/init-db",verifyToken, requireRole("admin"), async (req, res) => {
     const client = await pool.connect();
 
     try {
         await client.query(`
             CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                employee_id VARCHAR(50) UNIQUE NOT NULL,
+                                                 id SERIAL PRIMARY KEY,
+                                                 employee_id VARCHAR(50) UNIQUE NOT NULL,
                 password VARCHAR(255),
                 name VARCHAR(100) NOT NULL,
                 email VARCHAR(255),
                 phone VARCHAR(20),
                 address TEXT,
                 kakao_id VARCHAR(100) UNIQUE,
+                role VARCHAR(20) DEFAULT 'user',   -- ✅ 추가
                 marketing_agreed BOOLEAN DEFAULT false,
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
-            );
+                );
 
             CREATE INDEX IF NOT EXISTS idx_employee_id ON users(employee_id);
             CREATE INDEX IF NOT EXISTS idx_kakao_id ON users(kakao_id);
@@ -415,7 +455,7 @@ app.post("/api/dev/init-db", async (req, res) => {
 });
 
 // 테스트 사용자 생성
-app.post("/api/dev/create-test-user", async (req, res) => {
+app.post("/api/dev/create-test-user",  verifyToken, requireRole("admin"),async (req, res) => {
     const client = await pool.connect();
 
     try {
@@ -463,7 +503,7 @@ app.post("/api/dev/create-test-user", async (req, res) => {
 });
 
 // Redis 캐시 초기화
-app.post("/api/dev/clear-cache", async (req, res) => {
+app.post("/api/dev/clear-cache", verifyToken, requireRole("admin"), async (req, res) => {
     try {
         await redis.flushDb();
         res.json({
@@ -478,7 +518,7 @@ app.post("/api/dev/clear-cache", async (req, res) => {
 });
 
 // 현재 판매중인 상품 조회
-app.get("/api/sale/current", async (req, res) => {
+app.get("/api/sale/current", verifyToken, async (req, res) => {
     const client = await pool.connect();
 
     try {
@@ -544,7 +584,7 @@ app.get("/api/sale/current", async (req, res) => {
 });
 
 // 상품 목록 조회
-app.get("/api/products", async (req, res) => {
+app.get("/api/products", verifyToken, async (req, res) => {
     const client = await pool.connect();
 
     try {
@@ -566,7 +606,7 @@ app.get("/api/products", async (req, res) => {
 });
 
 // 상품 상세 조회
-app.get("/api/products/:id", async (req, res) => {
+app.get("/api/products/:id", verifyToken,  async (req, res) => {
     const client = await pool.connect();
 
     try {
@@ -594,6 +634,116 @@ app.get("/api/products/:id", async (req, res) => {
         client.release();
     }
 });
+
+// 회원 탈퇴
+app.delete("/api/user/:employeeId",  verifyToken,async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+        const { employeeId } = req.params;
+
+        await client.query('BEGIN');
+
+        // 사용자 존재 확인
+        const userCheck = await client.query(
+            'SELECT * FROM users WHERE employee_id = $1',
+            [employeeId]
+        );
+
+        if (userCheck.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({
+                message: "사용자를 찾을 수 없습니다."
+            });
+        }
+
+        const user = userCheck.rows[0];
+
+        // DB에서 사용자 삭제
+        await client.query(
+            'DELETE FROM users WHERE employee_id = $1',
+            [employeeId]
+        );
+
+        // Redis 캐시 삭제
+        await invalidateUserCache(employeeId);
+
+        // 카카오 ID 매핑도 삭제
+        if (user.kakao_id) {
+            await redis.del(`kakao:${user.kakao_id}`);
+        }
+
+        await client.query('COMMIT');
+
+        res.json({
+            message: "회원 탈퇴가 완료되었습니다."
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error("Delete user error:", error);
+        res.status(500).json({
+            message: "회원 탈퇴 처리 중 오류가 발생했습니다."
+        });
+    } finally {
+        client.release();
+    }
+});
+
+// 5. 사용자 정보 수정
+app.put("/api/user/:employeeId", verifyToken, async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+        const { employeeId } = req.params;
+        const { name, email, phone, address } = req.body;
+
+        await client.query('BEGIN');
+
+        // DB 업데이트
+        const result = await client.query(
+            `UPDATE users 
+             SET name = COALESCE($1, name),
+                 email = COALESCE($2, email),
+                 phone = COALESCE($3, phone),
+                 address = COALESCE($4, address),
+                 updated_at = NOW()
+             WHERE employee_id = $5
+             RETURNING *`,
+            [name, email, phone, address, employeeId]
+        );
+
+        if (result.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({
+                message: "사용자를 찾을 수 없습니다."
+            });
+        }
+
+        // Redis 캐시 무효화
+        await invalidateUserCache(employeeId);
+
+        await client.query('COMMIT');
+
+        // 비밀번호 제외하고 반환
+        const { password, ...userData } = result.rows[0];
+
+        res.json({
+            message: "사용자 정보가 수정되었습니다.",
+            user: userData
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error("Update user error:", error);
+        res.status(500).json({
+            message: "사용자 정보 수정 중 오류가 발생했습니다."
+        });
+    } finally {
+        client.release();
+    }
+});
+
 // ============================================
 // 서버 시작
 // ============================================
