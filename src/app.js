@@ -567,32 +567,38 @@ app.get("/api/sale/current", verifyToken, async (req, res) => {
     const client = await pool.connect();
 
     try {
-        // 현재 시간 기준으로 판매 정보 조회
         const result = await client.query(`
-            SELECT 
-                p.*,
-                s.id as sale_id,
-                s.sale_start,
-                s.sale_end,
-                s.total_stock,
-                s.remaining_stock,
-                s.status as sale_status,
-                CASE
-                    WHEN NOW() < s.sale_start THEN 'before'
-                    WHEN NOW() >= s.sale_start AND NOW() < s.sale_end AND s.remaining_stock > 0 THEN 'during'
-                    ELSE 'after'
-                END as current_status,
-                EXTRACT(EPOCH FROM (s.sale_start - NOW())) as seconds_until_start
-            FROM products p
-            JOIN sales s ON p.id = s.product_id
-            ORDER BY s.sale_start DESC
-            LIMIT 1
-        `);
+      SELECT 
+        p.id,
+        p.name,
+        p.spec,
+        p.price,
+        p.stock,
+        p.emoji,
+        p.description,
+        p.image_url,              -- ✅ 대표 이미지
+        p.features,
+        p.detail_images,
+        s.id AS sale_id,
+        s.sale_start,
+        s.sale_end,
+        s.total_stock,
+        s.remaining_stock,
+        s.status AS sale_status,
+        CASE
+            WHEN NOW() < s.sale_start THEN 'before'
+            WHEN NOW() >= s.sale_start AND NOW() < s.sale_end AND s.remaining_stock > 0 THEN 'during'
+            ELSE 'after'
+        END AS current_status,
+        EXTRACT(EPOCH FROM (s.sale_start - NOW())) AS seconds_until_start
+      FROM products p
+      JOIN sales s ON p.id = s.product_id
+      ORDER BY s.sale_start DESC
+      LIMIT 1
+    `);
 
         if (result.rows.length === 0) {
-            return res.status(404).json({
-                message: "판매 정보가 없습니다."
-            });
+            return res.status(404).json({ message: "판매 정보가 없습니다." });
         }
 
         const data = result.rows[0];
@@ -605,7 +611,10 @@ app.get("/api/sale/current", verifyToken, async (req, res) => {
                 price: data.price,
                 stock: data.stock,
                 emoji: data.emoji,
-                description: data.description
+                description: data.description,
+                imageUrl: data.image_url,        // ✅ 응답에 포함
+                features: data.features,
+                detailImages: data.detail_images,
             },
             sale: {
                 id: data.sale_id,
@@ -614,20 +623,16 @@ app.get("/api/sale/current", verifyToken, async (req, res) => {
                 totalStock: data.total_stock,
                 remainingStock: data.remaining_stock,
                 status: data.current_status,
-                secondsUntilStart: Math.max(0, data.seconds_until_start)
-            }
+                secondsUntilStart: Math.max(0, data.seconds_until_start),
+            },
         });
-
     } catch (error) {
         console.error("Get current sale error:", error);
-        res.status(500).json({
-            message: "판매 정보 조회 중 오류가 발생했습니다."
-        });
+        res.status(500).json({ message: "판매 정보 조회 중 오류가 발생했습니다." });
     } finally {
         client.release();
     }
 });
-
 // 상품 목록 조회
 app.get("/api/products", verifyToken, async (req, res) => {
     const client = await pool.connect();
