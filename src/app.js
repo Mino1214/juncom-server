@@ -8,7 +8,7 @@ import jwt from "jsonwebtoken";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 
 // 환경변수 로드
 dotenv.config();
@@ -327,10 +327,12 @@ app.post("/api/auth/signup", async (req, res) => {
         const hashedPassword = password ? await bcrypt.hash(password, 10) : '';
 
         const insertResult = await client.query(
-            `INSERT INTO users (employee_id, password, name, email, phone, address, kakao_id, marketing_agreed, role, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-     RETURNING *`,
-            [employeeId, hashedPassword, name, email || '', phone || '', address || '', kakaoId || null, marketingAgreed || false, role || 'user']
+            `INSERT INTO users (
+                employee_id, password, name, email, phone, address, kakao_id, marketing_agreed, role, created_at
+            )
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'user',NOW())
+                 RETURNING *`,
+            [employeeId, hashedPassword, name, email || '', phone || '', address || '', kakaoId || null, marketingAgreed || false]
         );
 
         const newUser = insertResult.rows[0];
