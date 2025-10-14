@@ -3,15 +3,15 @@ import nodemailer from 'nodemailer';
 class EmailService {
     constructor() {
         this.transporter = nodemailer.createTransport({
-            host: 'smtp.hiworks.com',
-            port: 465,
-            secure: true,
+            host: 'smtp.cafe24.com',   // ✅ 카페24 SMTP 서버
+            port: 587,                 // ✅ TLS 포트 (465는 SSL용이라 X)
+            secure: false,             // ✅ 587은 TLS, SSL 아님
             auth: {
-                user: 'help@roomi.co.kr',
-                pass: 'FyCmbdgZ0iCpGvSYrVT7',
+                user: 'help@cleanupsystems.shop',   // ✅ 카페24 이메일 계정
+                pass: 'rotoRldi2@@',        // ✅ 카페24 웹메일 로그인 비번
             },
             tls: {
-                rejectUnauthorized: false,
+                rejectUnauthorized: false,          // ✅ 자체 인증서 문제 방지
             },
         });
     }
