@@ -1417,12 +1417,7 @@ app.post("/api/admin/cleanup-verifications", verifyToken, requireRole("admin"), 
 });
 app.use("/api/uploads", express.static("uploads"));
 
-// app.js 시작 부분에 추가
-app._router.stack.forEach(function(r){
-    if (r.route && r.route.path){
-        console.log(r.route.path)
-    }
-})
+
 
 
 const PORT = 5000;
