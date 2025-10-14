@@ -162,27 +162,29 @@ app.post("/api/send-verification", async (req, res) => {
     }
 });// 2. 인증번호 검증 API
 // ============================================
+// 2. 인증번호 검증 API
+// ============================================
 app.post("/api/auth/verify-code", async (req, res) => {
     const client = await pool.connect();
 
     try {
-        const { employeeId, code } = req.body;
+        const { email, code } = req.body;  // employeeId → email
 
-        if (!employeeId || !code) {
-            return res.status(400).json({ message: "사번과 인증번호를 입력해주세요." });
+        if (!email || !code) {
+            return res.status(400).json({ message: "이메일과 인증번호를 입력해주세요." });
         }
 
         await client.query('BEGIN');
 
-        // 1. DB에서 인증번호 조회
+        // 1. DB에서 인증번호 조회 (email 기준)
         const result = await client.query(
             `SELECT * FROM email_verifications 
-             WHERE employee_id = $1 
+             WHERE email = $1 
              AND code = $2 
              AND verified = false 
              ORDER BY created_at DESC 
              LIMIT 1`,
-            [employeeId, code]
+            [email, code]
         );
 
         if (result.rows.length === 0) {
@@ -211,7 +213,6 @@ app.post("/api/auth/verify-code", async (req, res) => {
         // 4. 인증 완료 토큰 발급 (5분 유효)
         const verificationToken = jwt.sign(
             {
-                employeeId,
                 email: verification.email,
                 verified: true
             },
@@ -236,19 +237,19 @@ app.post("/api/auth/verify-code", async (req, res) => {
 // ============================================
 // 3. 인증 이력 조회 (선택사항 - 관리자용)
 // ============================================
-app.get("/api/admin/verifications/:employeeId", verifyToken, requireRole("admin"), async (req, res) => {
+app.get("/api/admin/verifications/:email", verifyToken, requireRole("admin"), async (req, res) => {
     const client = await pool.connect();
 
     try {
-        const { employeeId } = req.params;
+        const { email } = req.params;  // employeeId → email
 
         const result = await client.query(
-            `SELECT id, email, code, verified, expires_at, created_at 
+            `SELECT id, employee_id, email, code, verified, expires_at, created_at 
              FROM email_verifications 
-             WHERE employee_id = $1 
+             WHERE email = $1 
              ORDER BY created_at DESC 
              LIMIT 10`,
-            [employeeId]
+            [email]
         );
 
         res.json(result.rows);
@@ -262,16 +263,16 @@ app.get("/api/admin/verifications/:employeeId", verifyToken, requireRole("admin"
 });
 
 // ============================================
-// 4. 만료된 인증번호 정리 (크론잡용)
+// 4. 만료된 인증번호 정리 (크론잡용) - 수정 불필요
 // ============================================
 app.post("/api/admin/cleanup-verifications", verifyToken, requireRole("admin"), async (req, res) => {
     const client = await pool.connect();
 
     try {
         const result = await client.query(
-            `DELETE FROM email_verifications 
-             WHERE expires_at < NOW() 
-             OR (verified = true AND created_at < NOW() - INTERVAL '7 days')`
+            `DELETE FROM email_verifications
+             WHERE expires_at < NOW()
+                OR (verified = true AND created_at < NOW() - INTERVAL '7 days')`
         );
 
         res.json({
@@ -286,7 +287,6 @@ app.post("/api/admin/cleanup-verifications", verifyToken, requireRole("admin"), 
         client.release();
     }
 });
-
 // 기본 테스트
 app.get("/", (req, res) => {
     res.send("Node + Redis + PostgreSQL 서버 실행 중 🚀");
