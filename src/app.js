@@ -9,6 +9,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import bcrypt from "bcryptjs";
+import emailService from "./email.service.js";
 
 // 환경변수 로드
 dotenv.config();
