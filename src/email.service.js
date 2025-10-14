@@ -14,6 +14,7 @@ class EmailService {
             tls: {
                 rejectUnauthorized: false,
                 minVersion: 'TLSv1',
+                maxVersion: 'TLSv1.2',
             },
             debug: true,
             logger: true
