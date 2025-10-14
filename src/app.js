@@ -161,7 +161,7 @@ app.post("/api/send-verification", async (req, res) => {
         if (client) client.release();
     }
 });// 2. 인증번호 검증 API
-app.post("/api/auth/verify-code", async (req, res) => {
+app.post("/api/verify-code", async (req, res) => {
     console.log("✅ verify-code 호출됨!");
     let client;
 
