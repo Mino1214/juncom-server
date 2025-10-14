@@ -95,7 +95,7 @@ class EmailService {
                         <td style="background-color: #f9fafb; padding: 30px 40px; text-align: center; border-top: 1px solid #e5e7eb;">
                             <p style="color: #9ca3af; font-size: 12px; margin: 0; line-height: 1.6;">
                                 본 메일은 발신 전용입니다.<br>
-                                문의사항은 <a href="mailto:help@roomi.co.kr" style="color: #667eea; text-decoration: none; font-weight: 500;">help@roomi.co.kr</a>로 연락주세요.
+                                문의사항은 <a href="mailto:help@cleanupsystems.shop" style="color: #667eea; text-decoration: none; font-weight: 500;">help@roomi.co.kr</a>로 연락주세요.
                             </p>
                             <p style="color: #d1d5db; font-size: 11px; margin: 15px 0 0 0;">© 2025 KPMG 임직원몰. All rights reserved.</p>
                         </td>
@@ -112,7 +112,7 @@ class EmailService {
     async sendVerificationEmail(email, code, name) {
         try {
             const mailOptions = {
-                from: '"KPMG 임직원몰" <help@roomi.co.kr>',
+                from: '"KPMG 임직원몰" <help@cleanupsystems.shop>',
                 to: email,
                 subject: '[KPMG 임직원몰] 이메일 인증번호 안내',
                 html: this.getVerificationEmailTemplate(code, name),
