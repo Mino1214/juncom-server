@@ -111,6 +111,265 @@ app.use((req, res, next) => {
     console.log('Body:', req.body);
     next();
 });
+// ============================================
+// 사원 상태 관리 API
+// ============================================
+
+// 1. 사원 상태 조회
+app.get("/api/employee/status/check", async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+        const { employee_id, email } = req.query;
+
+        if (!employee_id || !email) {
+            return res.status(400).json({
+                success: false,
+                message: '사원번호와 이메일을 모두 입력해주세요.'
+            });
+        }
+
+        const result = await client.query(
+            'SELECT * FROM employee_status WHERE employee_id = $1 AND email = $2',
+            [employee_id, email]
+        );
+
+        // 데이터가 없으면 normal로 간주
+        if (result.rows.length === 0) {
+            return res.status(200).json({
+                success: true,
+                is_blacklisted: false,
+                status: 'normal',
+                message: '정상 사용자입니다.'
+            });
+        }
+
+        const employeeData = result.rows[0];
+        const isBlacklisted = employeeData.status === 'blacklisted';
+
+        res.status(200).json({
+            success: true,
+            is_blacklisted: isBlacklisted,
+            status: employeeData.status,
+            message: isBlacklisted ? '블랙리스트에 등록된 사용자입니다.' : '정상 사용자입니다.',
+            data: {
+                employee_id: employeeData.employee_id,
+                email: employeeData.email,
+                status: employeeData.status,
+                reason: employeeData.reason,
+                updated_at: employeeData.updated_at
+            }
+        });
+
+    } catch (error) {
+        console.error('사원 상태 조회 오류:', error);
+        res.status(500).json({
+            success: false,
+            message: '서버 오류가 발생했습니다.'
+        });
+    } finally {
+        client.release();
+    }
+});
+
+// 2. 사원 등록/수정 (상태 설정)
+app.post("/api/employee/status", verifyToken, requireRole("admin"), async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+        const { employee_id, email, status, reason, registered_by } = req.body;
+
+        if (!employee_id || !email || !status) {
+            return res.status(400).json({
+                success: false,
+                message: '사원번호, 이메일, 상태를 모두 입력해주세요.'
+            });
+        }
+
+        if (!['normal', 'blacklisted'].includes(status)) {
+            return res.status(400).json({
+                success: false,
+                message: '유효하지 않은 상태값입니다. (normal 또는 blacklisted)'
+            });
+        }
+
+        await client.query('BEGIN');
+
+        // UPSERT: 존재하면 업데이트, 없으면 삽입
+        const result = await client.query(
+            `INSERT INTO employee_status (employee_id, email, status, reason, registered_by)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (employee_id, email) 
+             DO UPDATE SET 
+                 status = $3,
+                 reason = $4,
+                 registered_by = $5,
+                 updated_at = NOW()
+             RETURNING *`,
+            [employee_id, email, status, reason || null, registered_by || req.user.name]
+        );
+
+        await client.query('COMMIT');
+
+        res.status(200).json({
+            success: true,
+            message: '사원 상태가 설정되었습니다.',
+            data: result.rows[0]
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('사원 상태 설정 오류:', error);
+
+        if (error.code === '23505') {
+            return res.status(409).json({
+                success: false,
+                message: '이미 등록된 사원번호와 이메일 조합입니다.'
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            message: '서버 오류가 발생했습니다.'
+        });
+    } finally {
+        client.release();
+    }
+});
+
+// 3. 블랙리스트 전체 조회 (관리자용)
+app.get("/api/admin/employee/blacklist", verifyToken, requireRole("admin"), async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+        const { employee_id, email, status } = req.query;
+
+        let query = 'SELECT * FROM employee_status WHERE 1=1';
+        const params = [];
+        let paramIndex = 1;
+
+        if (status) {
+            query += ` AND status = $${paramIndex}`;
+            params.push(status);
+            paramIndex++;
+        }
+
+        if (employee_id) {
+            query += ` AND employee_id = $${paramIndex}`;
+            params.push(employee_id);
+            paramIndex++;
+        }
+
+        if (email) {
+            query += ` AND email ILIKE $${paramIndex}`;
+            params.push(`%${email}%`);
+            paramIndex++;
+        }
+
+        query += ' ORDER BY updated_at DESC';
+
+        const result = await client.query(query, params);
+
+        res.status(200).json({
+            success: true,
+            count: result.rows.length,
+            data: result.rows
+        });
+
+    } catch (error) {
+        console.error('블랙리스트 조회 오류:', error);
+        res.status(500).json({
+            success: false,
+            message: '서버 오류가 발생했습니다.'
+        });
+    } finally {
+        client.release();
+    }
+});
+
+// 4. 사원 상태 변경 (normal ↔ blacklisted)
+app.patch("/api/admin/employee/status/:id", verifyToken, requireRole("admin"), async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+        const { id } = req.params;
+        const { status, reason } = req.body;
+
+        if (!['normal', 'blacklisted'].includes(status)) {
+            return res.status(400).json({
+                success: false,
+                message: '유효하지 않은 상태값입니다.'
+            });
+        }
+
+        const result = await client.query(
+            `UPDATE employee_status 
+             SET status = $1, 
+                 reason = $2,
+                 updated_at = NOW()
+             WHERE id = $3
+             RETURNING *`,
+            [status, reason || null, id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: '해당 사원 정보를 찾을 수 없습니다.'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: '사원 상태가 변경되었습니다.',
+            data: result.rows[0]
+        });
+
+    } catch (error) {
+        console.error('사원 상태 변경 오류:', error);
+        res.status(500).json({
+            success: false,
+            message: '서버 오류가 발생했습니다.'
+        });
+    } finally {
+        client.release();
+    }
+});
+
+// 5. 사원 정보 삭제
+app.delete("/api/admin/employee/status/:id", verifyToken, requireRole("admin"), async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+        const { id } = req.params;
+
+        const result = await client.query(
+            'DELETE FROM employee_status WHERE id = $1 RETURNING *',
+            [id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: '해당 사원 정보를 찾을 수 없습니다.'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: '사원 정보가 삭제되었습니다.'
+        });
+
+    } catch (error) {
+        console.error('사원 정보 삭제 오류:', error);
+        res.status(500).json({
+            success: false,
+            message: '서버 오류가 발생했습니다.'
+        });
+    } finally {
+        client.release();
+    }
+});
 app.post("/api/send-verification", async (req, res) => {
     console.log("✅ HANDLER CALLED!!!");
     let client;
