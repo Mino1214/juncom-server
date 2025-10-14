@@ -6,6 +6,7 @@ class EmailService {
             host: 'smtp.cafe24.com',
             port: 587,                     // ✅ SSL 포트로 변경
             secure: false,                  // ✅ SSL 직접 사용
+            requireTLS: true,
             auth: {
                 user: 'help@cleanupsystems.shop',
                 pass: 'rotoRldi2@@',
