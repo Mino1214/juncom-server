@@ -1020,7 +1020,203 @@ app.put(
         }
     }
 );
+app.post("/api/auth/send-verification", async (req, res) => {
+    const client = await pool.connect();
 
+    try {
+        const { employeeId, email } = req.body;
+
+        if (!employeeId || !email) {
+            return res.status(400).json({ message: "사번과 이메일을 입력해주세요." });
+        }
+
+        await client.query('BEGIN');
+
+        // 1. 사번으로 사용자 확인
+        const userResult = await client.query(
+            'SELECT * FROM users WHERE employee_id = $1',
+            [employeeId]
+        );
+
+        if (userResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: "등록되지 않은 사번입니다." });
+        }
+
+        const user = userResult.rows[0];
+
+        // 2. 이메일 일치 확인
+        if (user.email !== email) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: "사번과 이메일이 일치하지 않습니다." });
+        }
+
+        // 3. 기존 미인증 코드 삭제 (같은 사번의 이전 인증 시도)
+        await client.query(
+            'DELETE FROM email_verifications WHERE employee_id = $1 AND verified = false',
+            [employeeId]
+        );
+
+        // 4. 인증번호 생성
+        const verificationCode = emailService.generateVerificationCode();
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5분 후
+
+        // 5. DB에 인증번호 저장
+        await client.query(
+            `INSERT INTO email_verifications (employee_id, email, code, expires_at)
+             VALUES ($1, $2, $3, $4)`,
+            [employeeId, email, verificationCode, expiresAt]
+        );
+
+        // 6. 이메일 발송
+        await emailService.sendVerificationEmail(email, verificationCode, user.name);
+
+        await client.query('COMMIT');
+
+        res.json({
+            message: "인증번호가 이메일로 발송되었습니다.",
+            expiresIn: 300 // 초 단위 (5분)
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error("Send verification error:", error);
+        res.status(500).json({
+            message: "인증번호 발송 중 오류가 발생했습니다.",
+            error: error.message
+        });
+    } finally {
+        client.release();
+    }
+});
+
+// ============================================
+// 2. 인증번호 검증 API
+// ============================================
+app.post("/api/auth/verify-code", async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+        const { employeeId, code } = req.body;
+
+        if (!employeeId || !code) {
+            return res.status(400).json({ message: "사번과 인증번호를 입력해주세요." });
+        }
+
+        await client.query('BEGIN');
+
+        // 1. DB에서 인증번호 조회
+        const result = await client.query(
+            `SELECT * FROM email_verifications 
+             WHERE employee_id = $1 
+             AND code = $2 
+             AND verified = false 
+             ORDER BY created_at DESC 
+             LIMIT 1`,
+            [employeeId, code]
+        );
+
+        if (result.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: "인증번호가 일치하지 않습니다." });
+        }
+
+        const verification = result.rows[0];
+
+        // 2. 만료 시간 확인
+        if (new Date() > new Date(verification.expires_at)) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: "인증번호가 만료되었습니다. 다시 요청해주세요." });
+        }
+
+        // 3. 인증 완료 처리
+        await client.query(
+            `UPDATE email_verifications 
+             SET verified = true 
+             WHERE id = $1`,
+            [verification.id]
+        );
+
+        await client.query('COMMIT');
+
+        // 4. 인증 완료 토큰 발급 (5분 유효)
+        const verificationToken = jwt.sign(
+            {
+                employeeId,
+                email: verification.email,
+                verified: true
+            },
+            JWT_SECRET,
+            { expiresIn: '5m' }
+        );
+
+        res.json({
+            message: "이메일 인증이 완료되었습니다.",
+            verificationToken
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error("Verify code error:", error);
+        res.status(500).json({ message: "인증번호 확인 중 오류가 발생했습니다." });
+    } finally {
+        client.release();
+    }
+});
+
+// ============================================
+// 3. 인증 이력 조회 (선택사항 - 관리자용)
+// ============================================
+app.get("/api/admin/verifications/:employeeId", verifyToken, requireRole("admin"), async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+        const { employeeId } = req.params;
+
+        const result = await client.query(
+            `SELECT id, email, code, verified, expires_at, created_at 
+             FROM email_verifications 
+             WHERE employee_id = $1 
+             ORDER BY created_at DESC 
+             LIMIT 10`,
+            [employeeId]
+        );
+
+        res.json(result.rows);
+
+    } catch (error) {
+        console.error("Get verifications error:", error);
+        res.status(500).json({ message: "인증 이력 조회 중 오류가 발생했습니다." });
+    } finally {
+        client.release();
+    }
+});
+
+// ============================================
+// 4. 만료된 인증번호 정리 (크론잡용)
+// ============================================
+app.post("/api/admin/cleanup-verifications", verifyToken, requireRole("admin"), async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+        const result = await client.query(
+            `DELETE FROM email_verifications 
+             WHERE expires_at < NOW() 
+             OR (verified = true AND created_at < NOW() - INTERVAL '7 days')`
+        );
+
+        res.json({
+            message: "만료된 인증번호가 정리되었습니다.",
+            deletedCount: result.rowCount
+        });
+
+    } catch (error) {
+        console.error("Cleanup verifications error:", error);
+        res.status(500).json({ message: "인증번호 정리 중 오류가 발생했습니다." });
+    } finally {
+        client.release();
+    }
+});
 app.use("/api/uploads", express.static("uploads"));
 const PORT = 5000;
 app.listen(PORT, async () => {
