@@ -131,7 +131,7 @@ app.get("/api/employee/status/check", async (req, res) => {
 
         const result = await client.query(
             'SELECT * FROM employee_status WHERE employee_id = $1',
-            [employee_id, email]
+            [employee_id]
         );
 
         // 데이터가 없으면 normal로 간주
