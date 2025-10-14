@@ -130,7 +130,7 @@ app.get("/api/employee/status/check", async (req, res) => {
         }
 
         const result = await client.query(
-            'SELECT * FROM employee_status WHERE employee_id = $1 AND email = $2',
+            'SELECT * FROM employee_status WHERE employee_id = $1',
             [employee_id, email]
         );
 
