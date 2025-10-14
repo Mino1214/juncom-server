@@ -112,6 +112,7 @@ app.use((req, res, next) => {
     next();
 });
 app.post("/api/send-verification", async (req, res) => {
+    console.log("✅✅✅ HANDLER CALLED!!!");
     const client = await pool.connect();
 
     try {
