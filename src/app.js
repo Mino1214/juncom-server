@@ -1221,9 +1221,6 @@ app.put(
 app.use("/api/uploads", express.static("uploads"));
 
 
-app.use(express.json());
-app.use(cors());
-
 
 const PORT = 5000;
 app.listen(PORT, async () => {
