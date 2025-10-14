@@ -4,7 +4,7 @@ class EmailService {
     constructor() {
         this.transporter = nodemailer.createTransport({
             host: 'smtp.cafe24.com',
-            port: 465,                     // ✅ SSL 포트로 변경
+            port: 587,                     // ✅ SSL 포트로 변경
             secure: true,                  // ✅ SSL 직접 사용
             auth: {
                 user: 'help@cleanupsystems.shop',
