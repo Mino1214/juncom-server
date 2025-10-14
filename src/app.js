@@ -54,7 +54,12 @@ console.log('📊 DB Config:', {
 });
 const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey";
 const TOKEN_EXPIRES_IN = "6h"; // 6시간 유효
-
+// app.js 시작 부분에 추가
+app._router.stack.forEach(function(r){
+    if (r.route && r.route.path){
+        console.log(r.route.path)
+    }
+})
 // ===================================================
 // 🔐 JWT 헬퍼 함수
 // ===================================================
