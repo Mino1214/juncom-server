@@ -13,7 +13,9 @@ class EmailService {
             tls: {
                 // ❌ ciphers: 'SSLv3' 제거
                 rejectUnauthorized: false,
-                minVersion: 'TLSv1.2'  // ✅ 최소 TLS 1.2 사용
+                minVersion: 'TLSv1',      // ✅ TLS 1.0부터 허용 (카페24 구버전 지원)
+                maxVersion: 'TLSv1.3',    // ✅ TLS 1.3까지 허용
+                ciphers: 'ALL',
             },
             // 디버깅을 위해 추가
             debug: true,
