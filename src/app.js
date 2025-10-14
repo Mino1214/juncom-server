@@ -113,75 +113,98 @@ app.use((req, res, next) => {
 });
 app.post("/api/send-verification", async (req, res) => {
     console.log("✅✅✅ HANDLER CALLED!!!");
-    const client = await pool.connect();
+    let client;
 
     try {
+        console.log("1️⃣ DB 연결 시도...");
+        client = await pool.connect();
+        console.log("✅ DB 연결 성공");
+
         const { employeeId, email } = req.body;
+        console.log("2️⃣ 받은 데이터:", { employeeId, email });
 
         if (!employeeId || !email) {
+            console.log("❌ 필수 파라미터 누락");
             return res.status(400).json({ message: "사번과 이메일을 입력해주세요." });
         }
 
+        console.log("3️⃣ 트랜잭션 시작...");
         await client.query('BEGIN');
+        console.log("✅ 트랜잭션 시작됨");
 
-        // 1. 사번으로 사용자 확인
+        console.log("4️⃣ 사용자 조회:", employeeId);
         const userResult = await client.query(
             'SELECT * FROM users WHERE employee_id = $1',
             [employeeId]
         );
+        console.log("✅ 쿼리 완료, 결과:", userResult.rows.length, "건");
 
         if (userResult.rows.length === 0) {
+            console.log("❌ 사용자 없음");
             await client.query('ROLLBACK');
             return res.status(404).json({ message: "등록되지 않은 사번입니다." });
         }
 
         const user = userResult.rows[0];
+        console.log("5️⃣ 사용자 찾음:", user.name);
 
-        // 2. 이메일 일치 확인
         if (user.email !== email) {
+            console.log("❌ 이메일 불일치");
             await client.query('ROLLBACK');
             return res.status(400).json({ message: "사번과 이메일이 일치하지 않습니다." });
         }
+        console.log("✅ 이메일 일치");
 
-        // 3. 기존 미인증 코드 삭제 (같은 사번의 이전 인증 시도)
+        console.log("6️⃣ 기존 인증코드 삭제...");
         await client.query(
             'DELETE FROM email_verifications WHERE employee_id = $1 AND verified = false',
             [employeeId]
         );
+        console.log("✅ 기존 코드 삭제 완료");
 
-        // 4. 인증번호 생성
+        console.log("7️⃣ 인증번호 생성...");
         const verificationCode = emailService.generateVerificationCode();
-        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5분 후
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+        console.log("✅ 인증번호:", verificationCode);
 
-        // 5. DB에 인증번호 저장
+        console.log("8️⃣ DB에 인증번호 저장...");
         await client.query(
             `INSERT INTO email_verifications (employee_id, email, code, expires_at)
              VALUES ($1, $2, $3, $4)`,
             [employeeId, email, verificationCode, expiresAt]
         );
+        console.log("✅ DB 저장 완료");
 
-        // 6. 이메일 발송
+        console.log("9️⃣ 이메일 발송 시작...");
         await emailService.sendVerificationEmail(email, verificationCode, user.name);
+        console.log("✅ 이메일 발송 완료");
 
         await client.query('COMMIT');
+        console.log("✅ 트랜잭션 커밋 완료");
 
+        console.log("🎉 응답 전송!");
         res.json({
             message: "인증번호가 이메일로 발송되었습니다.",
-            expiresIn: 300 // 초 단위 (5분)
+            expiresIn: 300
         });
 
     } catch (error) {
-        await client.query('ROLLBACK');
-        console.error("Send verification error:", error);
+        console.error("💥💥💥 에러 발생:", error);
+        console.error("에러 스택:", error.stack);
+        if (client) {
+            await client.query('ROLLBACK');
+        }
         res.status(500).json({
             message: "인증번호 발송 중 오류가 발생했습니다.",
             error: error.message
         });
     } finally {
-        client.release();
+        if (client) {
+            client.release();
+            console.log("✅ DB 연결 해제");
+        }
     }
 });
-
 // ============================================
 // 2. 인증번호 검증 API
 // ============================================
