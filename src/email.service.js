@@ -4,16 +4,20 @@ class EmailService {
     constructor() {
         this.transporter = nodemailer.createTransport({
             host: 'smtp.cafe24.com',
-            port: 587,                    // ✅ 카페24는 STARTTLS (587)
-            secure: false,                // ✅ SSL 아님 (true면 465에서만 동작)
+            port: 587,
+            secure: false,  // STARTTLS 사용
             auth: {
-                user: 'help@cleanupsystems.shop',  // 카페24 웹메일 계정
-                pass: '메일비밀번호',               // 카페24 웹메일 비번
+                user: 'help@cleanupsystems.shop',
+                pass: '메일비밀번호',
             },
             tls: {
-                ciphers: 'SSLv3',         // ✅ 일부 TLS 호환성 보완
+                // ❌ ciphers: 'SSLv3' 제거
                 rejectUnauthorized: false,
+                minVersion: 'TLSv1.2'  // ✅ 최소 TLS 1.2 사용
             },
+            // 디버깅을 위해 추가
+            debug: true,
+            logger: true
         });
     }
 
