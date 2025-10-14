@@ -1418,6 +1418,8 @@ app.post("/api/admin/cleanup-verifications", verifyToken, requireRole("admin"), 
 app.use("/api/uploads", express.static("uploads"));
 
 
+app.use(express.json());
+app.use(cors());
 
 
 const PORT = 5000;
