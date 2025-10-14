@@ -54,12 +54,7 @@ console.log('📊 DB Config:', {
 });
 const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey";
 const TOKEN_EXPIRES_IN = "6h"; // 6시간 유효
-// app.js 시작 부분에 추가
-app._router.stack.forEach(function(r){
-    if (r.route && r.route.path){
-        console.log(r.route.path)
-    }
-})
+
 // ===================================================
 // 🔐 JWT 헬퍼 함수
 // ===================================================
@@ -1421,6 +1416,15 @@ app.post("/api/admin/cleanup-verifications", verifyToken, requireRole("admin"), 
     }
 });
 app.use("/api/uploads", express.static("uploads"));
+
+// app.js 시작 부분에 추가
+app._router.stack.forEach(function(r){
+    if (r.route && r.route.path){
+        console.log(r.route.path)
+    }
+})
+
+
 const PORT = 5000;
 app.listen(PORT, async () => {
     console.log(`\n🚀 Server running at http://localhost:${PORT}\n`);
