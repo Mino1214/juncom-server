@@ -1218,7 +1218,7 @@ app.put(
         }
     }
 );
-app.post("/api/auth/send-verification", async (req, res) => {
+app.post("/api/send-verification", async (req, res) => {
     const client = await pool.connect();
 
     try {
