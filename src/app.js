@@ -104,6 +104,13 @@ function requireRole(role) {
 // 미들웨어
 app.use(express.json());
 app.use(cors());
+// 👇👇👇 여기에 추가!
+app.use((req, res, next) => {
+    console.log(`🔥 ${new Date().toISOString()} - ${req.method} ${req.path}`);
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
+    next();
+});
 app.post("/api/send-verification", async (req, res) => {
     const client = await pool.connect();
 
