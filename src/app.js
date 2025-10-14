@@ -112,51 +112,38 @@ app.use((req, res, next) => {
     next();
 });
 app.post("/api/send-verification", async (req, res) => {
-    console.log("✅✅✅ HANDLER CALLED!!!");
+    console.log("✅ HANDLER CALLED!!!");
     let client;
 
     try {
-        console.log("1️⃣ DB 연결 시도...");
         client = await pool.connect();
-        console.log("✅ DB 연결 성공");
+        const { email } = req.body;  // employeeId 안 받음!
 
-        const { employeeId, email } = req.body;
-        console.log("2️⃣ 받은 데이터:", { employeeId, email });
-
-        if (!employeeId || !email) {
-            console.log("❌ 필수 파라미터 누락");
-            return res.status(400).json({ message: "사번과 이메일을 입력해주세요." });
+        if (!email) {
+            return res.status(400).json({ message: "이메일을 입력해주세요." });
         }
 
-        console.log("3️⃣ 트랜잭션 시작...");
         await client.query('BEGIN');
 
-        // ❌ 이 부분 삭제!
-        // 회원가입 시에는 사용자 확인 불필요
-
-        console.log("4️⃣ 기존 인증코드 삭제...");
+        // 기존 인증코드 삭제 (이메일 기준)
         await client.query(
             'DELETE FROM email_verifications WHERE email = $1 AND verified = false',
-            [email]  // employeeId 대신 email로 검색
+            [email]
         );
 
-        console.log("5️⃣ 인증번호 생성...");
         const verificationCode = emailService.generateVerificationCode();
         const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-        console.log("✅ 인증번호:", verificationCode);
 
-        console.log("6️⃣ DB에 인증번호 저장...");
+        // employee_id 없이 저장
         await client.query(
-            `INSERT INTO email_verifications (employee_id, email, code, expires_at)
-             VALUES ($1, $2, $3, $4)`,
-            [employeeId, email, verificationCode, expiresAt]
+            `INSERT INTO email_verifications (email, code, expires_at)
+             VALUES ($1, $2, $3)`,
+            [email, verificationCode, expiresAt]
         );
 
-        console.log("7️⃣ 이메일 발송...");
-        await emailService.sendVerificationEmail(email, verificationCode, employeeId);
+        await emailService.sendVerificationEmail(email, verificationCode, '');
 
         await client.query('COMMIT');
-        console.log("✅ 완료!");
 
         res.json({
             message: "인증번호가 이메일로 발송되었습니다.",
@@ -173,8 +160,7 @@ app.post("/api/send-verification", async (req, res) => {
     } finally {
         if (client) client.release();
     }
-});// ============================================
-// 2. 인증번호 검증 API
+});// 2. 인증번호 검증 API
 // ============================================
 app.post("/api/auth/verify-code", async (req, res) => {
     const client = await pool.connect();
