@@ -162,18 +162,27 @@ app.post("/api/send-verification", async (req, res) => {
     }
 });// 2. 인증번호 검증 API
 app.post("/api/auth/verify-code", async (req, res) => {
+    console.log("✅ verify-code 호출됨!");
     let client;
 
     try {
-        client = await pool.connect();
+        console.log("1️⃣ 받은 데이터:", req.body);
         const { email, code } = req.body;
 
         if (!email || !code) {
+            console.log("❌ 파라미터 누락");
             return res.status(400).json({ message: "이메일과 인증번호를 입력해주세요." });
         }
 
-        await client.query('BEGIN');
+        console.log("2️⃣ DB 연결 시도...");
+        client = await pool.connect();
+        console.log("✅ DB 연결 성공");
 
+        console.log("3️⃣ 트랜잭션 시작...");
+        await client.query('BEGIN');
+        console.log("✅ 트랜잭션 시작됨");
+
+        console.log("4️⃣ 인증번호 조회 - email:", email, "code:", code);
         const result = await client.query(
             `SELECT * FROM email_verifications 
              WHERE email = $1 
@@ -183,28 +192,43 @@ app.post("/api/auth/verify-code", async (req, res) => {
              LIMIT 1`,
             [email, code]
         );
+        console.log("✅ 쿼리 완료, 결과:", result.rows.length, "건");
+
+        if (result.rows.length > 0) {
+            console.log("📋 찾은 데이터:", result.rows[0]);
+        }
 
         if (result.rows.length === 0) {
+            console.log("❌ 인증번호 불일치");
             await client.query('ROLLBACK');
             return res.status(400).json({ message: "인증번호가 일치하지 않습니다." });
         }
 
         const verification = result.rows[0];
+        console.log("5️⃣ 만료 시간 확인...");
+        console.log("현재 시간:", new Date());
+        console.log("만료 시간:", new Date(verification.expires_at));
 
         if (new Date() > new Date(verification.expires_at)) {
+            console.log("❌ 인증번호 만료됨");
             await client.query('ROLLBACK');
-            return res.status(400).json({ message: "인증번호가 만료되었습니다. 다시 요청해주세요." });
+            return res.status(400).json({ message: "인증번호가 만료되었습니다." });
         }
+        console.log("✅ 만료 안됨");
 
+        console.log("6️⃣ 인증 완료 처리...");
         await client.query(
             `UPDATE email_verifications 
              SET verified = true 
              WHERE id = $1`,
             [verification.id]
         );
+        console.log("✅ 업데이트 완료");
 
         await client.query('COMMIT');
+        console.log("✅ 커밋 완료");
 
+        console.log("7️⃣ 토큰 생성...");
         const verificationToken = jwt.sign(
             {
                 email: verification.email,
@@ -213,29 +237,32 @@ app.post("/api/auth/verify-code", async (req, res) => {
             JWT_SECRET,
             { expiresIn: '5m' }
         );
+        console.log("✅ 토큰 생성됨");
 
+        console.log("8️⃣ 응답 전송!");
         res.json({
             message: "이메일 인증이 완료되었습니다.",
             verificationToken
         });
 
     } catch (error) {
-        console.error("Verify code error:", error);
+        console.error("💥💥💥 에러 발생:", error);
+        console.error("에러 스택:", error.stack);
         if (client) {
             try {
                 await client.query('ROLLBACK');
-            } catch (rollbackError) {
-                console.error("Rollback error:", rollbackError);
+            } catch (e) {
+                console.error("롤백 에러:", e);
             }
         }
         res.status(500).json({ message: "인증번호 확인 중 오류가 발생했습니다." });
     } finally {
         if (client) {
             client.release();
+            console.log("✅ DB 연결 해제");
         }
     }
-});
-// ============================================
+});// ============================================
 // 3. 인증 이력 조회 (선택사항 - 관리자용)
 // ============================================
 app.get("/api/admin/verifications/:email", verifyToken, requireRole("admin"), async (req, res) => {
