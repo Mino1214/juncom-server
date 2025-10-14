@@ -161,14 +161,12 @@ app.post("/api/send-verification", async (req, res) => {
         if (client) client.release();
     }
 });// 2. 인증번호 검증 API
-// ============================================
-// 2. 인증번호 검증 API
-// ============================================
 app.post("/api/auth/verify-code", async (req, res) => {
-    const client = await pool.connect();
+    let client;
 
     try {
-        const { email, code } = req.body;  // employeeId → email
+        client = await pool.connect();
+        const { email, code } = req.body;
 
         if (!email || !code) {
             return res.status(400).json({ message: "이메일과 인증번호를 입력해주세요." });
@@ -176,7 +174,6 @@ app.post("/api/auth/verify-code", async (req, res) => {
 
         await client.query('BEGIN');
 
-        // 1. DB에서 인증번호 조회 (email 기준)
         const result = await client.query(
             `SELECT * FROM email_verifications 
              WHERE email = $1 
@@ -194,13 +191,11 @@ app.post("/api/auth/verify-code", async (req, res) => {
 
         const verification = result.rows[0];
 
-        // 2. 만료 시간 확인
         if (new Date() > new Date(verification.expires_at)) {
             await client.query('ROLLBACK');
             return res.status(400).json({ message: "인증번호가 만료되었습니다. 다시 요청해주세요." });
         }
 
-        // 3. 인증 완료 처리
         await client.query(
             `UPDATE email_verifications 
              SET verified = true 
@@ -210,7 +205,6 @@ app.post("/api/auth/verify-code", async (req, res) => {
 
         await client.query('COMMIT');
 
-        // 4. 인증 완료 토큰 발급 (5분 유효)
         const verificationToken = jwt.sign(
             {
                 email: verification.email,
@@ -226,14 +220,21 @@ app.post("/api/auth/verify-code", async (req, res) => {
         });
 
     } catch (error) {
-        await client.query('ROLLBACK');
         console.error("Verify code error:", error);
+        if (client) {
+            try {
+                await client.query('ROLLBACK');
+            } catch (rollbackError) {
+                console.error("Rollback error:", rollbackError);
+            }
+        }
         res.status(500).json({ message: "인증번호 확인 중 오류가 발생했습니다." });
     } finally {
-        client.release();
+        if (client) {
+            client.release();
+        }
     }
 });
-
 // ============================================
 // 3. 인증 이력 조회 (선택사항 - 관리자용)
 // ============================================
