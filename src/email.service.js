@@ -8,7 +8,7 @@ class EmailService {
             secure: false,  // STARTTLS 사용
             auth: {
                 user: 'help@cleanupsystems.shop',
-                pass: '메일비밀번호',
+                pass: 'rotoRldi2@@',
             },
             tls: {
                 // ❌ ciphers: 'SSLv3' 제거
