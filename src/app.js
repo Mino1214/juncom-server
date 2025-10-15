@@ -782,7 +782,7 @@ app.post("/api/auth/signup", async (req, res) => {
     const client = await pool.connect();
 
     try {
-        const { employeeId, password, name, email, phone, address, kakaoId, marketingAgreed ,addrress_detail} = req.body;
+        const { employeeId, password, name, email, phone, address, kakaoId, marketingAgreed ,address_detail} = req.body;
 
         if (!employeeId || !name) {
             return res.status(400).json({
@@ -811,7 +811,7 @@ app.post("/api/auth/signup", async (req, res) => {
 
         const insertResult = await client.query(
             `INSERT INTO users (
-                employee_id, password, name, email, phone, address, kakao_id, marketing_agreed, role, created_at,addrress_detail
+                employee_id, password, name, email, phone, address, kakao_id, marketing_agreed, role, created_at,address_detail
             )
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'user',NOW())
                  RETURNING *`,
