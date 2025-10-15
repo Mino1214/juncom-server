@@ -109,7 +109,7 @@ class EmailService {
     async sendVerificationEmail(email, code, name) {
         try {
             const mailOptions = {
-                from: '"KPMG 임직원몰" <help@cleanupsystems.shop>',
+                from: '"KPMG 임직원몰" <noreply@cleanupsystems.co.kr>',
                 to: email,
                 subject: '[KPMG 임직원몰] 이메일 인증번호 안내',
                 html: this.getVerificationEmailTemplate(code, name),
