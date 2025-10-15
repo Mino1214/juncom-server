@@ -4,7 +4,7 @@ import axios from 'axios';
 class AddressService {
     constructor() {
         // Kakao REST API Key (환경변수로 관리 권장)
-        this.kakaoApiKey = process.env.KAKAO_REST_API_KEY || 'YOUR_KAKAO_REST_API_KEY';
+        this.kakaoApiKey = 'b78ae2925790c4c5606a66f8d79dd7b0';
         this.kakaoApiUrl = 'https://dapi.kakao.com/v2/local/search/address.json';
     }
 
