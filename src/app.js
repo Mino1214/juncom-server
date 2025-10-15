@@ -635,8 +635,7 @@ app.get("/api/products/visible", async (req, res) => {
         const result = await client.query(
             `SELECT * FROM products
              WHERE status = 'active'
-             AND (release_date IS NULL )
---                 OR release_date >= $1
+             AND (release_date IS NULL OR release_date >= $1)
              ORDER BY release_date DESC`,
             [now]
         );
