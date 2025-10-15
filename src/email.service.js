@@ -6,7 +6,6 @@ class EmailService {
             host: 'smtp.worksmobile.com',
             port: 456,                     // ✅ SSL 포트로 변경
             secure: true,                  // ✅ SSL 직접 사용
-            ignoreTLS: true,
             auth: {
                 user: 'noreply@cleanupsystems.co.kr',
                 pass: '6UMyZFIzCnZs',
