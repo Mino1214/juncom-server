@@ -635,10 +635,15 @@ app.get("/api/products/visible", async (req, res) => {
         const result = await client.query(
             `SELECT * FROM products
              WHERE status = 'active'
-             AND (release_date IS NULL OR release_date <= $1)
+               AND is_visible = true
+               AND (release_date IS NULL OR release_date <= $1)
              ORDER BY release_date DESC`,
             [now]
         );
+
+        console.log("조회된 상품 수:", result.rows.length);
+        console.log("조회된 상품들:", result.rows);
+
         res.json(result.rows);
     } catch (error) {
         console.error("Visible products error:", error);
