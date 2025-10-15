@@ -1,6 +1,6 @@
 // routes/address.js (또는 기존 routes 파일에 추가)
 import express from 'express';
-import AddressService from '../services/AddressService.js';
+import AddressService from "./address.service.js";
 
 const router = express.Router();
 
