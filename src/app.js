@@ -811,11 +811,21 @@ app.post("/api/auth/signup", async (req, res) => {
 
         const insertResult = await client.query(
             `INSERT INTO users (
-                employee_id, password, name, email, phone, address, kakao_id, marketing_agreed, role, created_at,address_detail
+                employee_id, password, name, email, phone, address, kakao_id, marketing_agreed, role, created_at, address_detail
             )
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'user',NOW())
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'user',NOW(),$9)
                  RETURNING *`,
-            [employeeId, hashedPassword, name, email || '', phone || '', address || '', kakaoId || null, marketingAgreed || false || null]
+            [
+                employeeId,
+                hashedPassword,
+                name,
+                email || '',
+                phone || '',
+                address || '',
+                kakaoId || null,
+                marketingAgreed ?? false,   // ✅ 불리언 안전 처리
+                address_detail || ''
+            ]
         );
 
         const newUser = insertResult.rows[0];
