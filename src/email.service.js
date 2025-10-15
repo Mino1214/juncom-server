@@ -4,19 +4,17 @@ class EmailService {
     constructor() {
         this.transporter = nodemailer.createTransport({
             host: 'smtp.worksmobile.com',
-            port: 456,                     // ✅ SSL 포트로 변경
-            secure: true,                  // ✅ SSL 직접 사용
+            port: 465,
+            secure: true, // SSL
             auth: {
                 user: 'noreply@cleanupsystems.co.kr',
                 pass: '6UMyZFIzCnZs',
             },
             tls: {
                 rejectUnauthorized: false,
-                minVersion: 'TLSv1',
-                maxVersion: 'TLSv1.2',
             },
+            logger: true,
             debug: true,
-            logger: true
         });
     }
 
