@@ -912,7 +912,7 @@ app.put("/api/user/:employeeId",verifyToken, async (req, res) => {
 
     try {
         const { employeeId } = req.params;
-        const { name, email, phone, address } = req.body;
+        const { name, email, phone, address, address_detail } = req.body;
 
         await client.query('BEGIN');
 
@@ -923,10 +923,11 @@ app.put("/api/user/:employeeId",verifyToken, async (req, res) => {
                  email = COALESCE($2, email),
                  phone = COALESCE($3, phone),
                  address = COALESCE($4, address),
+                 address_detail = COALESCE($5, address_detail),
                  updated_at = NOW()
-             WHERE employee_id = $5
+             WHERE employee_id = $6
              RETURNING *`,
-            [name, email, phone, address, employeeId]
+            [name, email, phone, address, address_detail, employeeId]
         );
 
         if (result.rows.length === 0) {
@@ -956,7 +957,6 @@ app.put("/api/user/:employeeId",verifyToken, async (req, res) => {
         client.release();
     }
 });
-
 // ============================================
 // 개발용: DB 초기화 및 테스트 데이터
 // ============================================
