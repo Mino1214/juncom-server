@@ -3,13 +3,13 @@ import nodemailer from 'nodemailer';
 class EmailService {
     constructor() {
         this.transporter = nodemailer.createTransport({
-            host: 'smtp.cafe24.com',
-            port: 587,                     // ✅ SSL 포트로 변경
-            secure: false,                  // ✅ SSL 직접 사용
+            host: 'smtp.worksmobile.com',
+            port: 456,                     // ✅ SSL 포트로 변경
+            secure: true,                  // ✅ SSL 직접 사용
             ignoreTLS: true,
             auth: {
-                user: 'help@cleanupsystems.shop',
-                pass: 'rotoRldi2@@',
+                user: 'noreply@cleanupsystems.co.kr',
+                pass: '6UMyZFIzCnZs',
             },
             tls: {
                 rejectUnauthorized: false,
