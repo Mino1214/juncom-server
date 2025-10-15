@@ -11,6 +11,7 @@ import fs from "fs";
 import bcrypt from "bcryptjs";
 import emailService from "./email.service.js";
 import addressRoutes from './routes/address.js';
+import paymentRoutes from './routes/payment.js';
 // 환경변수 로드
 dotenv.config();
 
@@ -31,6 +32,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 const app = express();
 const { Pool } = pg;
+
 
 // PostgreSQL 연결
 const pool = new Pool({
@@ -115,6 +117,7 @@ app.use(cors({
 // 미들웨어
 app.use(express.json());
 app.use(addressRoutes);
+app.use('/api/payment', paymentRoutes);
 app.use(cors());
 // 👇👇👇 여기에 추가!
 app.use((req, res, next) => {
@@ -686,7 +689,10 @@ app.post("/api/auth/login", async (req, res) => {
                 name: user.name,
                 employeeId: user.employee_id,
                 email: user.email,
-                role: user.role
+                role: user.role,
+                address : user.address,
+                address_detail : user.address_detail,
+
             }
         });
 
