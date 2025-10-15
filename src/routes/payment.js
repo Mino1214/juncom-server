@@ -4,59 +4,109 @@ import crypto from 'crypto';
 
 const router = express.Router();
 
-// 나이스페이 테스트용 계정 (실제 계정으로 교체)
+// 나이스페이 설정
 const NICEPAY_BASE_URL = 'https://api.nicepay.co.kr/v1';
-const NICEPAY_CLIENT_KEY = 'S2_bc8d3fb863da4ed29a3b838d6ff4dbaf';
+const NICEPAY_CLIENT_ID = 'S2_bc8d3fb863da4ed29a3b838d6ff4dbaf';  // clientId
 const NICEPAY_SECRET_KEY = '2aa875220df74efbb2d95020bd726833';
 
 // 🔹 Basic 인증 토큰 생성
 function getAuthHeader() {
-    const basicToken = Buffer.from(`${NICEPAY_CLIENT_KEY}:${NICEPAY_SECRET_KEY}`).toString('base64');
-    return { Authorization: `Basic ${basicToken}`, 'Content-Type': 'application/json' };
+    const basicToken = Buffer.from(`${NICEPAY_CLIENT_ID}:${NICEPAY_SECRET_KEY}`).toString('base64');
+    return {
+        'Authorization': `Basic ${basicToken}`,
+        'Content-Type': 'application/json'
+    };
 }
 
-// 🔹 결제 요청 (결제창 생성)
+// 🔹 결제 요청 (프론트엔드에 결제 정보 반환)
 router.post('/request', async (req, res) => {
     try {
         const { orderId, amount, buyerName, buyerEmail, buyerTel, productName, returnUrl } = req.body;
 
-        const { data } = await axios.post(
-            `${NICEPAY_BASE_URL}/payments`,
-            {
-                orderId,
-                amount,
+        // 프론트엔드에서 AUTHNICE.requestPay()에 사용할 정보 반환
+        res.json({
+            success: true,
+            result: {
+                clientId: NICEPAY_CLIENT_ID,
+                orderId: orderId,
+                amount: amount,
                 goodsName: productName,
-                returnUrl,
-                buyerName,
-                buyerEmail,
-                buyerTel,
-                payMethod: 'CARD',
+                returnUrl: returnUrl,
+                buyerName: buyerName,
+                buyerEmail: buyerEmail,
+                buyerTel: buyerTel
+            }
+        });
+    } catch (error) {
+        console.error('결제 요청 실패:', error.message);
+        res.status(500).json({
+            success: false,
+            error: '결제 요청 실패',
+            detail: error.message
+        });
+    }
+});
+
+// 🔹 결제 승인 처리 (returnUrl로 돌아왔을 때 호출)
+router.post('/result', async (req, res) => {
+    try {
+        const { tid, orderId, amount } = req.body;
+
+        console.log('결제 승인 요청:', { tid, orderId, amount });
+
+        // 나이스페이 서버에 결제 승인 요청
+        const { data } = await axios.post(
+            `${NICEPAY_BASE_URL}/payments/${tid}`,
+            {
+                amount: amount,
+                orderId: orderId
             },
             { headers: getAuthHeader() }
         );
 
-        res.json({ result: data });
+        console.log('✅ 결제 승인 성공:', data);
+
+        // TODO: 데이터베이스에 주문 정보 저장
+        // await saveOrderToDatabase(data);
+
+        res.json({
+            success: true,
+            data: data
+        });
     } catch (error) {
-        console.error('결제 요청 실패:', error.response?.data || error.message);
-        res.status(500).json({ error: '결제 요청 실패', detail: error.response?.data });
+        console.error('❌ 결제 승인 실패:', error.response?.data || error.message);
+        res.status(500).json({
+            success: false,
+            error: '결제 승인 실패',
+            detail: error.response?.data
+        });
     }
 });
 
-// 🔹 결제 승인 콜백 처리
-router.post('/callback', async (req, res) => {
+// 🔹 결제 취소
+router.post('/cancel', async (req, res) => {
     try {
-        const { tid, orderId, amount } = req.body;
+        const { tid, orderId, amount, reason } = req.body;
+
         const { data } = await axios.post(
-            `${NICEPAY_BASE_URL}/payments/${tid}/confirm`,
-            { amount, orderId },
+            `${NICEPAY_BASE_URL}/payments/${tid}/cancel`,
+            {
+                orderId: orderId,
+                amount: amount,
+                reason: reason || '고객 요청'
+            },
             { headers: getAuthHeader() }
         );
 
-        console.log('✅ 결제 승인 성공:', data);
+        console.log('✅ 결제 취소 성공:', data);
         res.json({ success: true, data });
     } catch (error) {
-        console.error('결제 승인 실패:', error.response?.data || error.message);
-        res.status(500).json({ error: '결제 승인 실패' });
+        console.error('❌ 결제 취소 실패:', error.response?.data || error.message);
+        res.status(500).json({
+            success: false,
+            error: '결제 취소 실패',
+            detail: error.response?.data
+        });
     }
 });
 
