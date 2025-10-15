@@ -7,7 +7,7 @@ const router = express.Router();
 // 나이스페이 테스트용 계정 (실제 계정으로 교체)
 const NICEPAY_BASE_URL = 'https://api.nicepay.co.kr/v1';
 const NICEPAY_CLIENT_KEY = 'S2_bc8d3fb863da4ed29a3b838d6ff4dbaf';
-const NICEPAY_SECRET_KEY = '1d259c40e7074ae99e7cd8bb71a53e64';
+const NICEPAY_SECRET_KEY = '2aa875220df74efbb2d95020bd726833';
 
 // 🔹 Basic 인증 토큰 생성
 function getAuthHeader() {
