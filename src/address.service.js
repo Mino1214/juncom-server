@@ -12,7 +12,8 @@ class AddressService {
     async searchAddress(keyword) {
         try {
             // 1. 주소 검색
-            const addressResponse = await fetch(`${this.addressApiUrl}?query=${encodeURIComponent(keyword)}&size=30`, {
+            const addressUrl = `${this.kakaoApiUrl}?query=${encodeURIComponent(keyword)}&size=30`;
+            const addressResponse = await fetch(addressUrl, {
                 headers: {
                     'Authorization': `KakaoAK ${this.kakaoApiKey}`
                 }
@@ -20,7 +21,8 @@ class AddressService {
             const addressData = await addressResponse.json();
 
             // 2. 키워드 검색 (장소/건물명)
-            const keywordResponse = await fetch(`${this.keywordApiUrl}?query=${encodeURIComponent(keyword)}&size=15`, {
+            const keywordUrl = `${this.keywordApiUrl}?query=${encodeURIComponent(keyword)}&size=15`;
+            const keywordResponse = await fetch(keywordUrl, {
                 headers: {
                     'Authorization': `KakaoAK ${this.kakaoApiKey}`
                 }
