@@ -10,7 +10,7 @@ import path from "path";
 import fs from "fs";
 import bcrypt from "bcryptjs";
 import emailService from "./email.service.js";
-
+import addressRoutes from './routes/address.js';
 // 환경변수 로드
 dotenv.config();
 
@@ -103,6 +103,7 @@ function requireRole(role) {
 
 // 미들웨어
 app.use(express.json());
+app.use(addressRoutes);
 app.use(cors());
 // 👇👇👇 여기에 추가!
 app.use((req, res, next) => {
