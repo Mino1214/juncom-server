@@ -632,17 +632,37 @@ app.get("/api/products/visible", async (req, res) => {
     const client = await pool.connect();
     try {
         const now = new Date();
+
+        // 1단계: 모든 active 상품 조회
+        const allActive = await client.query(
+            `SELECT id, name, status, is_visible, release_date, stock 
+             FROM products 
+             WHERE status = 'active'`
+        );
+        console.log("=== 전체 active 상품 ===");
+        console.log(allActive.rows);
+
+        // 2단계: is_visible 필터 추가
+        const withVisible = await client.query(
+            `SELECT id, name, status, is_visible, release_date, stock 
+             FROM products 
+             WHERE status = 'active' AND is_visible = true`
+        );
+        console.log("=== is_visible=true 상품 ===");
+        console.log(withVisible.rows);
+
+        // 3단계: release_date 필터 추가
         const result = await client.query(
             `SELECT * FROM products
              WHERE status = 'active'
-               AND is_visible = true
-               AND (release_date IS NULL OR release_date <= $1)
+             AND is_visible = true
+             AND (release_date IS NULL OR release_date <= $1)
              ORDER BY release_date DESC`,
             [now]
         );
-
-        console.log("조회된 상품 수:", result.rows.length);
-        console.log("조회된 상품들:", result.rows);
+        console.log("=== 현재 시간 ===", now);
+        console.log("=== 최종 조회 결과 ===");
+        console.log(result.rows);
 
         res.json(result.rows);
     } catch (error) {
@@ -651,8 +671,7 @@ app.get("/api/products/visible", async (req, res) => {
     } finally {
         client.release();
     }
-});
-// 1. 일반 로그인 (사번/비밀번호)
+});// 1. 일반 로그인 (사번/비밀번호)
 // 1. 일반 로그인 (사번/비밀번호)
 app.post("/api/auth/login", async (req, res) => {
     const client = await pool.connect();
