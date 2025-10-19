@@ -1611,7 +1611,7 @@ app.get("/api/orders/:orderId", verifyToken, async (req, res) => {
 app.use("/api/uploads", express.static("uploads"));
 
 // ✅ NICEPAY 리턴 처리용 라우트
-app.post("/api/payment/result", (req, res) => {
+app.post("/api/payment/results", (req, res) => {
     // 결제 결과를 서버에서 필요 시 로그하거나 DB 기록 가능
     console.log("✅ NICEPAY Return Received:", req.body);
 
