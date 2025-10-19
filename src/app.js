@@ -1610,7 +1610,32 @@ app.get("/api/orders/:orderId", verifyToken, async (req, res) => {
 
 app.use("/api/uploads", express.static("uploads"));
 
+// ✅ NICEPAY 리턴 처리용 라우트
+app.post("/api/payment/result", (req, res) => {
+    // 결제 결과를 서버에서 필요 시 로그하거나 DB 기록 가능
+    console.log("✅ NICEPAY Return Received:", req.body);
 
+    // NICEPAY는 POST라서 HTML 직접 리턴해야 함
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(`
+    <!DOCTYPE html>
+    <html lang="ko">
+    <head>
+      <meta charset="UTF-8" />
+      <title>결제 처리 중...</title>
+      <script>
+        // URL 파라미터 유지
+        const query = window.location.search || '';
+        const redirectUrl = '/#/payment-result' + query;
+        window.location.replace(redirectUrl);
+      </script>
+    </head>
+    <body>
+      <p>결제 결과를 확인 중입니다. 잠시만 기다려주세요...</p>
+    </body>
+    </html>
+  `);
+});
 
 const PORT = 5000;
 app.listen(PORT, async () => {
