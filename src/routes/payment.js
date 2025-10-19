@@ -110,8 +110,7 @@ router.post('/cancel', async (req, res) => {
     }
 });
 
-// 🔹 웹훅 수신 엔드포인트 (나이스페이에서 호출)
-router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+router.post('/webhook', async (req, res) => {
     console.log('====================================');
     console.log('🔔 나이스페이 웹훅 수신!');
     console.log('====================================');
@@ -120,12 +119,14 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         // 1. 헤더 정보 로깅
         console.log('📋 Headers:', req.headers);
 
-        // 2. Body 파싱 (raw body를 받은 경우)
-        let webhookData;
-        if (Buffer.isBuffer(req.body)) {
-            webhookData = JSON.parse(req.body.toString());
-        } else {
-            webhookData = req.body;
+        // 2. Body 확인
+        const webhookData = req.body;
+
+        // 웹훅 등록 확인 요청인지 체크 (나이스페이가 등록 시 빈 요청을 보낼 수 있음)
+        if (!webhookData || Object.keys(webhookData).length === 0) {
+            console.log('📌 웹훅 등록 확인 요청 감지 - OK 응답');
+            // 나이스페이 웹훅 등록 시 요구하는 'OK' 문자열 응답
+            return res.status(200).send('OK');
         }
 
         // 3. 받은 데이터 상세 로깅
@@ -220,22 +221,15 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         console.log('====================================');
 
         // 7. 나이스페이에 성공 응답 (중요!)
-        // 나이스페이는 HTTP 200 응답을 받아야 웹훅 재시도를 하지 않음
-        res.status(200).json({
-            success: true,
-            message: 'Webhook received successfully'
-        });
+        // 실제 결제 웹훅에도 'OK' 문자열로 응답
+        res.status(200).send('OK');
 
     } catch (error) {
         console.error('❌ 웹훅 처리 에러:', error);
         console.error('Error Stack:', error.stack);
 
-        // 에러가 발생해도 200을 반환하여 재시도 방지
-        // 실제 운영에서는 에러 상황에 따라 적절히 처리
-        res.status(200).json({
-            success: false,
-            error: error.message
-        });
+        // 에러가 발생해도 'OK'를 반환하여 나이스페이가 재시도하지 않도록 함
+        res.status(200).send('OK');
     }
 });
 
