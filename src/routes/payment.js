@@ -1,13 +1,26 @@
 import express from 'express';
 import axios from 'axios';
-import crypto from 'crypto';
+import pg from 'pg';
 
 const router = express.Router();
+const { Pool } = pg;
 
 // 나이스페이 설정
 const NICEPAY_BASE_URL = 'https://api.nicepay.co.kr/v1';
-const NICEPAY_CLIENT_ID = 'R2_a924dce2ab1f4d5ba20ebe9f03757c2c';  // clientId
+const NICEPAY_CLIENT_ID = 'R2_a924dce2ab1f4d5ba20ebe9f03757c2c';
 const NICEPAY_SECRET_KEY = '8e549fad27bf441298b46b4d287de274';
+
+// PostgreSQL 연결 풀
+const pool = new Pool({
+    host: process.env.DB_HOST || 'jimo.world',
+    port: parseInt(process.env.DB_PORT || '5432'),
+    database: process.env.DB_NAME || 'postgres',
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || '1107',
+    ssl: process.env.DB_HOST !== 'localhost' ? {
+        rejectUnauthorized: false
+    } : false
+});
 
 // 🔹 Basic 인증 토큰 생성
 function getAuthHeader() {
@@ -16,6 +29,115 @@ function getAuthHeader() {
         'Authorization': `Basic ${basicToken}`,
         'Content-Type': 'application/json'
     };
+}
+
+// 🔹 주문 정보 저장 함수
+async function saveOrderFromWebhook(webhookData) {
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. payment_logs에 웹훅 로그 저장
+        await client.query(
+            `INSERT INTO payment_logs (tid, order_id, webhook_type, result_code, result_msg, raw_data)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [
+                webhookData.tid,
+                webhookData.orderId,
+                webhookData.status,
+                webhookData.resultCode,
+                webhookData.resultMsg,
+                JSON.stringify(webhookData)
+            ]
+        );
+
+        // 2. 결제 성공인 경우 주문 업데이트
+        if (webhookData.resultCode === '0000' && webhookData.status === 'paid') {
+
+            // 기존 주문이 있는지 확인
+            const existingOrder = await client.query(
+                'SELECT id FROM orders WHERE order_id = $1',
+                [webhookData.orderId]
+            );
+
+            if (existingOrder.rows.length > 0) {
+                // 주문이 이미 있으면 결제 정보만 업데이트
+                await client.query(
+                    `UPDATE orders 
+                     SET payment_status = 'paid',
+                         tid = $1,
+                         paid_at = $2,
+                         approve_no = $3,
+                         card_name = $4,
+                         receipt_url = $5,
+                         payment_method = $6,
+                         updated_at = NOW()
+                     WHERE order_id = $7`,
+                    [
+                        webhookData.tid,
+                        webhookData.paidAt,
+                        webhookData.approveNo,
+                        webhookData.card?.cardName || null,
+                        webhookData.receiptUrl,
+                        webhookData.payMethod || 'card',
+                        webhookData.orderId
+                    ]
+                );
+
+                // 배송 이력 추가
+                await client.query(
+                    `INSERT INTO delivery_history (order_id, status, message, created_by)
+                     VALUES ($1, 'paid', '결제가 완료되었습니다.', 'system')`,
+                    [webhookData.orderId]
+                );
+
+                console.log('✅ 주문 결제 정보 업데이트 완료:', webhookData.orderId);
+            } else {
+                console.log('⚠️ 주문 정보가 없음 (프론트엔드에서 미리 생성 필요):', webhookData.orderId);
+            }
+        }
+
+        // 3. 결제 취소/환불인 경우
+        else if (webhookData.status === 'cancelled' || webhookData.status === 'refunded') {
+            await client.query(
+                `UPDATE orders 
+                 SET payment_status = $1,
+                     cancelled_at = NOW(),
+                     cancel_reason = $2,
+                     updated_at = NOW()
+                 WHERE tid = $3`,
+                [
+                    webhookData.status,
+                    webhookData.resultMsg,
+                    webhookData.tid
+                ]
+            );
+
+            // 배송 이력 추가
+            await client.query(
+                `INSERT INTO delivery_history (order_id, status, message, created_by)
+                 VALUES ($1, $2, $3, 'system')`,
+                [
+                    webhookData.orderId,
+                    webhookData.status,
+                    `결제가 ${webhookData.status === 'cancelled' ? '취소' : '환불'}되었습니다. (${webhookData.resultMsg})`
+                ]
+            );
+
+            console.log('❌ 주문 취소/환불 처리:', webhookData.tid);
+        }
+
+        await client.query('COMMIT');
+        return true;
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('💥 주문 저장 실패:', error);
+        throw error;
+    } finally {
+        client.release();
+    }
 }
 
 // 🔹 결제 요청 (프론트엔드에 결제 정보 반환)
@@ -29,7 +151,8 @@ router.post('/request', async (req, res) => {
             result: {
                 clientId: NICEPAY_CLIENT_ID,
                 orderId: orderId,
-                amount: amount,
+                // amount: amount,
+                amount : 1000,  // 테스트용 고정금액
                 goodsName: productName,
                 returnUrl: returnUrl,
                 buyerName: buyerName,
@@ -65,9 +188,6 @@ router.post('/result', async (req, res) => {
         );
 
         console.log('✅ 결제 승인 성공:', data);
-
-        // TODO: 데이터베이스에 주문 정보 저장
-        // await saveOrderToDatabase(data);
 
         res.json({
             success: true,
@@ -110,10 +230,7 @@ router.post('/cancel', async (req, res) => {
     }
 });
 
-// payment.js 파일에 추가할 웹훅 관련 코드
-
 // 🔹 웹훅 수신 엔드포인트 (나이스페이에서 호출)
-// express.raw 미들웨어 제거 - express.json()으로 처리
 router.post('/webhook', async (req, res) => {
     console.log('====================================');
     console.log('🔔 나이스페이 웹훅 수신!');
@@ -126,17 +243,16 @@ router.post('/webhook', async (req, res) => {
         // 2. Body 확인
         const webhookData = req.body;
 
-        // 웹훅 등록 확인 요청인지 체크 (나이스페이가 등록 시 빈 요청을 보낼 수 있음)
+        // 웹훅 등록 확인 요청인지 체크
         if (!webhookData || Object.keys(webhookData).length === 0) {
             console.log('📌 웹훅 등록 확인 요청 감지 - OK 응답');
-            // 나이스페이 웹훅 등록 시 요구하는 'OK' 문자열 응답
             return res.status(200).send('OK');
         }
 
         // 3. 받은 데이터 상세 로깅
         console.log('📦 Webhook Data:', JSON.stringify(webhookData, null, 2));
 
-        // 4. 주요 필드 추출 및 로깅 (나이스페이 실제 필드 기준)
+        // 4. 주요 필드 추출 및 로깅
         const {
             resultCode,
             resultMsg,
@@ -145,19 +261,15 @@ router.post('/webhook', async (req, res) => {
             amount,
             payMethod,
             status,
-            paidAt,           // approvalDate 대신 paidAt 사용
+            paidAt,
             goodsName,
             buyerName,
             buyerEmail,
             buyerTel,
-            card,             // card 객체로 변경
+            card,
             approveNo,
             receiptUrl,
             signature,
-            ediDate,
-            channel,
-            currency,
-            // 추가로 올 수 있는 필드들
             ...otherFields
         } = webhookData;
 
@@ -171,83 +283,66 @@ router.post('/webhook', async (req, res) => {
         console.log('결과메시지 (resultMsg):', resultMsg);
         console.log('결제일시 (paidAt):', paidAt);
         console.log('승인번호 (approveNo):', approveNo);
-        console.log('서명 (signature):', signature);
 
         // 카드 정보가 있는 경우
         if (card) {
-            console.log('카드코드 (cardCode):', card.cardCode);
             console.log('카드사명 (cardName):', card.cardName);
             console.log('할부개월 (cardQuota):', card.cardQuota);
-            console.log('무이자여부 (isInterestFree):', card.isInterestFree);
         }
 
-        console.log('구매자명 (buyerName):', buyerName);
-        console.log('구매자 이메일 (buyerEmail):', buyerEmail);
-        console.log('구매자 연락처 (buyerTel):', buyerTel);
-        console.log('상품명 (goodsName):', goodsName);
-        console.log('영수증 URL (receiptUrl):', receiptUrl);
-
-        // 기타 필드가 있으면 로깅
-        if (Object.keys(otherFields).length > 0) {
-            console.log('==== 기타 필드 ====');
-            console.log(otherFields);
-        }
-
-        // 5. 웹훅 타입 확인 (결제 성공, 실패, 취소 등)
+        // 5. 웹훅 타입 확인 및 DB 저장
         if (resultCode === '0000' || status === 'paid') {
             console.log('✅ 결제 성공 웹훅');
 
-            // TODO: 결제 성공 처리 로직
-            // - 데이터베이스에 결제 정보 저장
-            // - 주문 상태 업데이트
-            // - 재고 차감
-            // - 이메일 발송 등
+            // 👇 DB에 주문 정보 저장
+            try {
+                await saveOrderFromWebhook(webhookData);
+                console.log('💾 주문 정보 DB 저장 완료');
+            } catch (error) {
+                console.error('💥 주문 저장 실패:', error);
+            }
 
         } else if (status === 'cancelled' || status === 'refunded') {
             console.log('❌ 결제 취소/환불 웹훅');
 
-            // TODO: 취소/환불 처리 로직
-            // - 데이터베이스 상태 업데이트
-            // - 재고 복구
-            // - 알림 발송 등
+            // 👇 취소/환불 정보 DB 업데이트
+            try {
+                await saveOrderFromWebhook(webhookData);
+                console.log('💾 취소/환불 정보 DB 저장 완료');
+            } catch (error) {
+                console.error('💥 취소/환불 저장 실패:', error);
+            }
 
         } else {
             console.log('⚠️ 기타 상태 웹훅:', status || resultCode);
         }
 
-        // 6. 타임스탬프와 함께 파일로 저장 (디버깅용)
-        // ES6 import 방식으로 수정
+        // 6. 파일로 저장 (디버깅용)
         try {
             const { promises: fs } = await import('fs');
             const logFileName = `webhook_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
             const logPath = `./logs/webhooks/${logFileName}`;
 
-            // logs/webhooks 디렉토리 생성
             await fs.mkdir('./logs/webhooks', { recursive: true });
-
-            // 웹훅 데이터를 파일로 저장
             await fs.writeFile(logPath, JSON.stringify({
                 timestamp: new Date().toISOString(),
                 headers: req.headers,
                 body: webhookData
             }, null, 2));
 
-            console.log(`💾 웹훅 데이터 저장됨: ${logPath}`);
+            console.log(`💾 웹훅 로그 파일 저장됨: ${logPath}`);
         } catch (fileError) {
             console.error('파일 저장 실패:', fileError);
         }
 
         console.log('====================================');
 
-        // 7. 나이스페이에 성공 응답 (중요!)
-        // 실제 결제 웹훅에도 'OK' 문자열로 응답
+        // 7. 나이스페이에 성공 응답
         res.status(200).send('OK');
 
     } catch (error) {
         console.error('❌ 웹훅 처리 에러:', error);
         console.error('Error Stack:', error.stack);
-
-        // 에러가 발생해도 'OK'를 반환하여 나이스페이가 재시도하지 않도록 함
         res.status(200).send('OK');
     }
 });
@@ -258,11 +353,9 @@ router.get('/webhook/logs', async (req, res) => {
         const { promises: fs } = await import('fs');
         const path = await import('path');
 
-        // 로그 디렉토리 읽기
         const logDir = './logs/webhooks';
         const files = await fs.readdir(logDir);
 
-        // 최근 10개 파일만 읽기
         const recentFiles = files
             .filter(f => f.endsWith('.json'))
             .sort((a, b) => b.localeCompare(a))
@@ -270,7 +363,7 @@ router.get('/webhook/logs', async (req, res) => {
 
         const logs = [];
         for (const file of recentFiles) {
-            const content = await fs.readFile(path.join(logDir, file), 'utf8');
+            const content = await fs.readFile(path.default.join(logDir, file), 'utf8');
             logs.push(JSON.parse(content));
         }
 
@@ -294,27 +387,29 @@ router.post('/webhook/test', async (req, res) => {
     console.log('🧪 웹훅 테스트 시작');
 
     try {
-        // 테스트용 웹훅 데이터
         const testWebhookData = {
             resultCode: '0000',
             resultMsg: '정상 처리되었습니다.',
             tid: 'test_' + Date.now(),
-            orderId: 'ORD_' + Date.now(),
+            orderId: 'ORD-' + Date.now(),
             amount: 10000,
-            payMethod: 'CARD',
+            payMethod: 'card',
             status: 'paid',
-            approvalDate: new Date().toISOString(),
-            cardCode: '01',
-            cardName: '테스트카드',
-            cardNo: '1234****5678',
+            paidAt: new Date().toISOString(),
+            approveNo: '000000',
+            card: {
+                cardCode: '04',
+                cardName: '삼성카드',
+                cardQuota: 0,
+                isInterestFree: false
+            },
             buyerName: '홍길동',
             buyerEmail: 'test@example.com',
             buyerTel: '010-1234-5678',
             goodsName: '테스트 상품',
-            mallId: 'test_mall'
+            receiptUrl: 'https://npg.nicepay.co.kr/issue/issueLoader.do?test'
         };
 
-        // 자기 자신의 웹훅 엔드포인트 호출
         const webhookUrl = `http://localhost:5000/api/payment/webhook`;
         const response = await axios.post(webhookUrl, testWebhookData, {
             headers: {
