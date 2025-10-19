@@ -1519,6 +1519,95 @@ app.put(
         }
     }
 );
+
+// ============================================
+// 🧾 주문 관련 API
+// ============================================
+
+// 주문 목록 조회 (MyPage용)
+app.get("/api/orders", verifyToken, async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { employeeId } = req.query;
+
+        if (!employeeId) {
+            return res.status(400).json({ success: false, message: "employeeId가 필요합니다." });
+        }
+
+        const result = await client.query(
+            `SELECT 
+                order_id,
+                product_name,
+                total_amount AS amount,
+                payment_status AS status,
+                created_at
+             FROM orders
+             WHERE employee_id = $1
+             ORDER BY created_at DESC`,
+            [employeeId]
+        );
+
+        res.json({
+            success: true,
+            orders: result.rows
+        });
+    } catch (error) {
+        console.error("Get orders error:", error);
+        res.status(500).json({ success: false, message: "주문 목록 조회 실패" });
+    } finally {
+        client.release();
+    }
+});
+
+// 주문 상세 조회 (OrderDetailPage용)
+app.get("/api/orders/:orderId", verifyToken, async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { orderId } = req.params;
+
+        const result = await client.query(
+            `SELECT 
+                order_id,
+                product_name,
+                total_amount AS amount,
+                payment_status AS status,
+                payment_method,
+                paid_at AS payment_time,
+                card_name,
+                card_number,
+                receipt_url,
+                recipient_name,
+                delivery_address,
+                delivery_detail_address AS delivery_detail,
+                delivery_phone AS recipient_phone,
+                delivery_status,
+                tracking_number,
+                created_at
+             FROM orders
+             WHERE order_id = $1
+             LIMIT 1`,
+            [orderId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "해당 주문을 찾을 수 없습니다."
+            });
+        }
+
+        res.json({
+            success: true,
+            order: result.rows[0]
+        });
+    } catch (error) {
+        console.error("Get order detail error:", error);
+        res.status(500).json({ success: false, message: "주문 상세 조회 실패" });
+    } finally {
+        client.release();
+    }
+});
+
 app.use("/api/uploads", express.static("uploads"));
 
 
