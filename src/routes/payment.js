@@ -110,6 +110,10 @@ router.post('/cancel', async (req, res) => {
     }
 });
 
+// payment.js 파일에 추가할 웹훅 관련 코드
+
+// 🔹 웹훅 수신 엔드포인트 (나이스페이에서 호출)
+// express.raw 미들웨어 제거 - express.json()으로 처리
 router.post('/webhook', async (req, res) => {
     console.log('====================================');
     console.log('🔔 나이스페이 웹훅 수신!');
@@ -132,7 +136,7 @@ router.post('/webhook', async (req, res) => {
         // 3. 받은 데이터 상세 로깅
         console.log('📦 Webhook Data:', JSON.stringify(webhookData, null, 2));
 
-        // 4. 주요 필드 추출 및 로깅 (예상되는 필드들)
+        // 4. 주요 필드 추출 및 로깅 (나이스페이 실제 필드 기준)
         const {
             resultCode,
             resultMsg,
@@ -141,15 +145,18 @@ router.post('/webhook', async (req, res) => {
             amount,
             payMethod,
             status,
-            approvalDate,
-            cardCode,
-            cardName,
-            cardNo,
+            paidAt,           // approvalDate 대신 paidAt 사용
+            goodsName,
             buyerName,
             buyerEmail,
             buyerTel,
-            goodsName,
-            mallId,
+            card,             // card 객체로 변경
+            approveNo,
+            receiptUrl,
+            signature,
+            ediDate,
+            channel,
+            currency,
             // 추가로 올 수 있는 필드들
             ...otherFields
         } = webhookData;
@@ -162,12 +169,23 @@ router.post('/webhook', async (req, res) => {
         console.log('결제상태 (status):', status);
         console.log('결과코드 (resultCode):', resultCode);
         console.log('결과메시지 (resultMsg):', resultMsg);
-        console.log('승인일시 (approvalDate):', approvalDate);
-        console.log('카드사 (cardName):', cardName);
+        console.log('결제일시 (paidAt):', paidAt);
+        console.log('승인번호 (approveNo):', approveNo);
+        console.log('서명 (signature):', signature);
+
+        // 카드 정보가 있는 경우
+        if (card) {
+            console.log('카드코드 (cardCode):', card.cardCode);
+            console.log('카드사명 (cardName):', card.cardName);
+            console.log('할부개월 (cardQuota):', card.cardQuota);
+            console.log('무이자여부 (isInterestFree):', card.isInterestFree);
+        }
+
         console.log('구매자명 (buyerName):', buyerName);
         console.log('구매자 이메일 (buyerEmail):', buyerEmail);
         console.log('구매자 연락처 (buyerTel):', buyerTel);
         console.log('상품명 (goodsName):', goodsName);
+        console.log('영수증 URL (receiptUrl):', receiptUrl);
 
         // 기타 필드가 있으면 로깅
         if (Object.keys(otherFields).length > 0) {
@@ -198,11 +216,12 @@ router.post('/webhook', async (req, res) => {
         }
 
         // 6. 타임스탬프와 함께 파일로 저장 (디버깅용)
-        const fs = require('fs').promises;
-        const logFileName = `webhook_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-        const logPath = `./logs/webhooks/${logFileName}`;
-
+        // ES6 import 방식으로 수정
         try {
+            const { promises: fs } = await import('fs');
+            const logFileName = `webhook_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+            const logPath = `./logs/webhooks/${logFileName}`;
+
             // logs/webhooks 디렉토리 생성
             await fs.mkdir('./logs/webhooks', { recursive: true });
 
@@ -236,8 +255,8 @@ router.post('/webhook', async (req, res) => {
 // 🔹 웹훅 로그 조회 API (디버깅용)
 router.get('/webhook/logs', async (req, res) => {
     try {
-        const fs = require('fs').promises;
-        const path = require('path');
+        const { promises: fs } = await import('fs');
+        const path = await import('path');
 
         // 로그 디렉토리 읽기
         const logDir = './logs/webhooks';
