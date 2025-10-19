@@ -55,7 +55,7 @@ console.log('📊 DB Config:', {
     ssl: process.env.DB_HOST !== 'localhost' ? 'enabled' : 'disabled'
 });
 const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey";
-const TOKEN_EXPIRES_IN = "6h"; // 6시간 유효
+const TOKEN_EXPIRES_IN = "365d"; // 6시간 유효
 
 // ===================================================
 // 🔐 JWT 헬퍼 함수
