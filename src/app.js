@@ -653,24 +653,24 @@ app.get("/api/products/visible", async (req, res) => {
         client.release();
     }
 });// 1. 일반 로그인 (사번/비밀번호)
-// 1. 일반 로그인 (사번/비밀번호)
+// 1. 일반 로그인 (이메일/비밀번호) - 수정된 버전
 app.post("/api/auth/login", async (req, res) => {
     const client = await pool.connect();
 
     try {
-        const { employeeId, password } = req.body;
-        if (!employeeId || !password) {
-            return res.status(400).json({ message: "사번과 비밀번호를 입력해주세요." });
+        const { email, password } = req.body;
+        if (!email || !password) {
+            return res.status(400).json({ message: "이메일과 비밀번호를 입력해주세요." });
         }
 
-        let user = await getUserFromCache(employeeId);
+        let user = await getUserFromCache(email);
         if (!user) {
-            const result = await client.query('SELECT * FROM users WHERE employee_id = $1', [employeeId]);
+            const result = await client.query('SELECT * FROM users WHERE email = $1', [email]);
             if (result.rows.length === 0) {
-                return res.status(404).json({ message: "등록되지 않은 사번입니다." });
+                return res.status(404).json({ message: "등록되지 않은 이메일입니다." });
             }
             user = result.rows[0];
-            await setUserCache(employeeId, user);
+            await setUserCache(email, user);
         }
 
         // 🔐 bcrypt로 비밀번호 비교
@@ -687,12 +687,11 @@ app.post("/api/auth/login", async (req, res) => {
             token,
             user: {
                 name: user.name,
-                employeeId: user.employee_id,
                 email: user.email,
+                employeeId: user.employee_id,
                 role: user.role,
                 address : user.address,
                 address_detail : user.address_detail,
-
             }
         });
 
