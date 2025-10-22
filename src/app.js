@@ -135,59 +135,78 @@ app.get("/api/employee/status/check", async (req, res) => {
     const client = await pool.connect();
 
     try {
-        const { employee_id, email } = req.query;
+        const { email } = req.query;
 
-        if (!employee_id || !email) {
+        if (!email) {
             return res.status(400).json({
                 success: false,
-                message: '사원번호와 이메일을 모두 입력해주세요.'
+                message: "이메일을 입력해주세요."
             });
         }
 
-        const result = await client.query(
-            'SELECT * FROM employee_status WHERE employee_id = $1',
-            [employee_id]
+        // 1️⃣ 블랙리스트 검사
+        const blacklistResult = await client.query(
+            "SELECT * FROM employee_status WHERE email = $1",
+            [email]
         );
 
-        // 데이터가 없으면 normal로 간주
-        if (result.rows.length === 0) {
+        let isBlacklisted = false;
+        let blacklistInfo = null;
+
+        if (blacklistResult.rows.length > 0) {
+            const row = blacklistResult.rows[0];
+            isBlacklisted = row.status === "blacklisted";
+            blacklistInfo = {
+                status: row.status,
+                reason: row.reason,
+                updated_at: row.updated_at
+            };
+        }
+
+        // 2️⃣ 이메일 중복 검사
+        const userCheck = await client.query(
+            "SELECT id FROM users WHERE email = $1",
+            [email]
+        );
+        const isDuplicate = userCheck.rows.length > 0;
+
+        // 3️⃣ 결과 반환
+        if (isBlacklisted) {
+            return res.status(200).json({
+                success: true,
+                is_blacklisted: true,
+                is_duplicate: false,
+                message: "블랙리스트에 등록된 사용자입니다.",
+                data: blacklistInfo
+            });
+        }
+
+        if (isDuplicate) {
             return res.status(200).json({
                 success: true,
                 is_blacklisted: false,
-                status: 'normal',
-                message: '정상 사용자입니다.'
+                is_duplicate: true,
+                message: "이미 가입된 이메일입니다."
             });
         }
 
-        const employeeData = result.rows[0];
-        const isBlacklisted = employeeData.status === 'blacklisted';
-
+        // 정상
         res.status(200).json({
             success: true,
-            is_blacklisted: isBlacklisted,
-            status: employeeData.status,
-            message: isBlacklisted ? '블랙리스트에 등록된 사용자입니다.' : '정상 사용자입니다.',
-            data: {
-                employee_id: employeeData.employee_id,
-                email: employeeData.email,
-                status: employeeData.status,
-                reason: employeeData.reason,
-                updated_at: employeeData.updated_at
-            }
+            is_blacklisted: false,
+            is_duplicate: false,
+            message: "정상 사용자입니다."
         });
-
     } catch (error) {
-        console.error('사원 상태 조회 오류:', error);
+        console.error("사원 상태 조회 오류:", error);
         res.status(500).json({
             success: false,
-            message: '서버 오류가 발생했습니다.'
+            message: "서버 오류가 발생했습니다."
         });
     } finally {
         client.release();
     }
-});
-
-// 2. 사원 등록/수정 (상태 설정)
+});// 2. 사원 등록/수정 (상태 설정)
 app.post("/api/employee/status", verifyToken, requireRole("admin"), async (req, res) => {
     const client = await pool.connect();
 
