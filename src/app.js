@@ -672,17 +672,62 @@ app.get("/api/products/visible", async (req, res) => {
         client.release();
     }
 });// 1. 일반 로그인 (사번/비밀번호)
+// 1️⃣ 비밀번호 초기화 (개발용)
 app.post("/api/dev/reset-password", async (req, res) => {
-    const { email, newPassword } = req.body;
+    const client = await pool.connect();
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    try {
+        const { email, newPassword } = req.body;
 
-    const result = await pool.query(
-        "UPDATE users SET password = $1 WHERE email = $2 RETURNING *",
-        [hashedPassword, email]
-    );
+        // 입력 검증
+        if (!email || !newPassword) {
+            return res.status(400).json({
+                success: false,
+                message: "이메일과 새 비밀번호를 모두 입력해주세요."
+            });
+        }
 
-    res.json({ message: "비밀번호 변경 완료", user: result.rows[0] });
+        // 사용자 존재 확인
+        const userResult = await client.query(
+            "SELECT * FROM users WHERE email = $1",
+            [email]
+        );
+
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "해당 이메일로 등록된 사용자가 없습니다."
+            });
+        }
+
+        // 비밀번호 해싱
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        // DB 업데이트
+        const result = await client.query(
+            "UPDATE users SET password = $1, updated_at = NOW() WHERE email = $2 RETURNING *",
+            [hashedPassword, email]
+        );
+
+        // Redis 캐시 무효화
+        await invalidateUserCache(result.rows[0].employee_id);
+
+        console.log(`✅ [비밀번호 리셋 완료] ${email} → 새 비번: ${newPassword}`);
+
+        return res.json({
+            success: true,
+            message: "비밀번호가 성공적으로 변경되었습니다.",
+            email: result.rows[0].email
+        });
+    } catch (error) {
+        console.error("💥 비밀번호 리셋 오류:", error);
+        return res.status(500).json({
+            success: false,
+            message: "비밀번호 변경 중 서버 오류가 발생했습니다."
+        });
+    } finally {
+        client.release();
+    }
 });
 // 1. 일반 로그인 (이메일/비밀번호) - 수정된 버전
 app.post("/api/auth/login", async (req, res) => {
