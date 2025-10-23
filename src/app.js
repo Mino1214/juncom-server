@@ -672,6 +672,18 @@ app.get("/api/products/visible", async (req, res) => {
         client.release();
     }
 });// 1. 일반 로그인 (사번/비밀번호)
+app.post("/api/dev/reset-password", async (req, res) => {
+    const { email, newPassword } = req.body;
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    const result = await pool.query(
+        "UPDATE users SET password = $1 WHERE email = $2 RETURNING *",
+        [hashedPassword, email]
+    );
+
+    res.json({ message: "비밀번호 변경 완료", user: result.rows[0] });
+});
 // 1. 일반 로그인 (이메일/비밀번호) - 수정된 버전
 app.post("/api/auth/login", async (req, res) => {
     const client = await pool.connect();
