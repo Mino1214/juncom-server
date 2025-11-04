@@ -869,7 +869,7 @@ app.post("/api/auth/signup", async (req, res) => {
     try {
         const { employeeId, password, name, email, phone, address, kakaoId, marketingAgreed ,address_detail} = req.body;
 
-        if (!employeeId || !name) {
+        if ( !name) {
             return res.status(400).json({
                 message: "필수 정보를 입력해주세요."
             });
