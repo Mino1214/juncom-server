@@ -12,6 +12,9 @@ import bcrypt from "bcryptjs";
 import emailService from "./email.service.js";
 import addressRoutes from './routes/address.js';
 import paymentRoutes from './routes/payment.js';
+// 📁 최상단에 import 추가
+import { fileURLToPath } from "url";
+import { dirname } from "path";
 // 환경변수 로드
 dotenv.config();
 
@@ -1684,7 +1687,16 @@ app.get("/api/orders/:orderId", verifyToken, async (req, res) => {
     }
 });
 
-app.use("/api/uploads", express.static("uploads"));
+// 📍 현재 실행 파일 기준 절대경로 계산
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// 📁 uploads 폴더 절대경로 지정
+const uploadsPath = path.join(__dirname, "uploads");
+
+// 기존 라인 교체
+// app.use("/api/uploads", express.static("uploads"));
+app.use("/api/uploads", express.static(uploadsPath));
 
 // ✅ NICEPAY 리턴 처리용 라우트
 app.post("/api/payment/results", (req, res) => {
