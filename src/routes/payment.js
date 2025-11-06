@@ -157,7 +157,8 @@ router.post('/request', async (req, res) => {
                 returnUrl: returnUrl,
                 buyerName: buyerName,
                 buyerEmail: buyerEmail,
-                buyerTel: buyerTel
+                buyerTel: buyerTel,
+                payMethod: 'CARD' // ✅ 신용카드 결제만 허용
             }
         });
     } catch (error) {

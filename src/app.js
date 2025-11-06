@@ -107,13 +107,13 @@ function requireRole(role) {
 
 // CORS 설정 추가 (반드시 다른 미들웨어보다 먼저!)
 app.use(cors({
-    // origin: [
-    //     'https://jimo.world',
-    //     'http://localhost:3000',
-    //     'http://localhost:5173',  // Vite 개발 서버,
-    //     'https://cleanupsystems.shop'
-    // ],
-    origin: "*",
+    origin: [
+        'https://jimo.world',
+        'http://localhost:3000',
+        'http://localhost:5174',  // Vite 개발 서버,
+        'https://cleanupsystems.shop'
+    ],
+    // origin: "*",
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
@@ -122,7 +122,6 @@ app.use(cors({
 app.use(express.json());
 app.use(addressRoutes);
 app.use('/api/payment', paymentRoutes);
-app.use(cors());
 // 👇👇👇 여기에 추가!
 app.use((req, res, next) => {
     console.log(`🔥 ${new Date().toISOString()} - ${req.method} ${req.path}`);
