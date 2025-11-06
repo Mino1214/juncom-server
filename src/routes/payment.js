@@ -151,8 +151,8 @@ router.post('/request', async (req, res) => {
             result: {
                 clientId: NICEPAY_CLIENT_ID,
                 orderId: orderId,
-                amount: amount,
-                // amount : 1000,  // 테스트용 고정금액
+                // amount: amount,
+                amount : 1000,  // 테스트용 고정금액
                 goodsName: productName,
                 returnUrl: returnUrl,
                 buyerName: buyerName,
