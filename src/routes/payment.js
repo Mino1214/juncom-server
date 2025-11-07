@@ -463,4 +463,49 @@ router.post('/approve', async (req, res) => {
         });
     }
 });
+
+router.all('/complete', async (req, res) => {
+    try {
+        // POST body 또는 GET query 파라미터 처리
+        const params = req.method === 'POST' ? req.body : req.query;
+
+        console.log('결제 완료 콜백 수신:', params);
+
+        const { tid, orderId, amount, resultCode, resultMsg, authToken } = params;
+
+        // 프론트엔드로 리다이렉트 (GET 방식)
+        const redirectParams = new URLSearchParams({
+            orderId: orderId || '',
+            amount: amount || '',
+            tid: tid || '',
+            resultCode: resultCode || '',
+            resultMsg: resultMsg || '',
+            authToken: authToken || ''
+        });
+
+        // 해시 라우터를 사용하는 프론트엔드로 리다이렉트
+        const redirectUrl = `https://jimo.world/#/payment-result?${redirectParams.toString()}`;
+
+        // HTML 응답으로 자동 리다이렉트
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>결제 처리 중...</title>
+            </head>
+            <body>
+                <script>
+                    window.location.href = "${redirectUrl}";
+                </script>
+                <p>결제 처리 중입니다. 자동으로 이동하지 않으면 <a href="${redirectUrl}">여기</a>를 클릭하세요.</p>
+            </body>
+            </html>
+        `);
+    } catch (error) {
+        console.error('결제 완료 처리 오류:', error);
+        res.redirect('https://jimo.world/#/payment-result?success=false');
+    }
+});
+
 export default router;
