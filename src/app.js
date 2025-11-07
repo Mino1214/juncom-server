@@ -1658,8 +1658,7 @@ app.get("/api/orders", verifyToken, async (req, res) => {
                  delivery_address,
                  delivery_detail_address,
                  delivery_request,
-                 tracking_number,
-                
+                 tracking_number
              FROM orders
              WHERE employee_id = $1
              ORDER BY created_at DESC`,
