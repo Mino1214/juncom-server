@@ -120,6 +120,7 @@ app.use(cors({
 }));
 // 미들웨어
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(addressRoutes);
 app.use('/api/payment', paymentRoutes);
 // 👇👇👇 여기에 추가!
