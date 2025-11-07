@@ -1647,12 +1647,19 @@ app.get("/api/orders", verifyToken, async (req, res) => {
         }
 
         const result = await client.query(
-            `SELECT 
-                order_id,
-                product_name,
-                total_amount AS amount,
-                payment_status AS status,
-                created_at
+            `SELECT
+                 order_id,
+                 product_name,
+                 total_amount AS amount,
+                 payment_status AS status,
+                 created_at,
+                 recipient_name,
+                 recipient_phone,
+                 delivery_address,
+                 delivery_detail_address,
+                 delivery_request,
+                 delivery_status,
+                 tracking_number
              FROM orders
              WHERE employee_id = $1
              ORDER BY created_at DESC`,
