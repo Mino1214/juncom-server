@@ -523,20 +523,10 @@ router.all('/complete', async (req, res) => {
 
         let success = 'false';
         let paymentData = {};
-// 나이스페이 서버에 결제 승인 요청
 
-        // tid가 있으면 나이스페이 API로 결제 상태 직접 조회
+        // ✅ 나이스페이 API로 결제 상태 조회
         if (params.tid) {
             try {
-                const { data2 } = await axios.post(
-                    `${NICEPAY_BASE_URL}/payments/${params.tid}`,
-                    {
-                        amount: params.amount,
-                        orderId: params.orderId
-                    },
-                    { headers: getAuthHeader() }
-                );
-                // ✅ 나이스페이 API로 거래 조회
                 const { data } = await axios.get(
                     `${NICEPAY_BASE_URL}/payments/${params.tid}`,
                     { headers: getAuthHeader() }
@@ -550,7 +540,6 @@ router.all('/complete', async (req, res) => {
                 }
             } catch (apiError) {
                 console.error('거래 조회 실패:', apiError.response?.data || apiError.message);
-                // 조회 실패해도 tid가 있으면 일단 성공으로 처리
                 success = params.tid ? 'true' : 'false';
             }
         }
@@ -565,41 +554,13 @@ router.all('/complete', async (req, res) => {
         });
 
         const redirectUrl = `https://cleanupsystems.shop/#/payment-result?${redirectParams.toString()}`;
-        res.redirect(redirectUrl);
 
-        res.send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <title>결제 처리 중...</title>
-                <script>
-                    // 부모 창으로 메시지 전송 (팝업인 경우)
-                    if (window.opener) {
-                        window.opener.postMessage({
-                            type: 'PAYMENT_COMPLETE',
-                            data: {
-                                success: ${success === 'true'},
-                                orderId: '${params.orderId || ''}',
-                                tid: '${params.tid || ''}',
-                                amount: '${params.amount || ''}'
-                            }
-                        }, '*');
-                        window.close();
-                    } else {
-                        // 팝업이 아니면 리다이렉트
-                        window.location.href = "${redirectUrl}";
-                    }
-                </script>
-            </head>
-            <body>
-                <p>결제 처리 중입니다...</p>
-            </body>
-            </html>
-        `);
+        // ✅ redirect만 보냄 (중복 응답 제거)
+        return res.redirect(redirectUrl);
+
     } catch (error) {
         console.error('결제 완료 처리 오류:', error);
-        res.redirect('https://cleanupsystems.shop/#/payment-result?success=false');
+        return res.redirect('https://cleanupsystems.shop/#/payment-result?success=false');
     }
 });
 export default router;
