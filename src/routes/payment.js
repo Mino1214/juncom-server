@@ -565,6 +565,7 @@ router.all('/complete', async (req, res) => {
         });
 
         const redirectUrl = `https://cleanupsystems.shop/#/payment-result?${redirectParams.toString()}`;
+        res.redirect(redirectUrl);
 
         res.send(`
             <!DOCTYPE html>
