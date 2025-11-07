@@ -300,11 +300,43 @@ router.all('/result', async (req, res) => {
 
 // 🔹 결제 취소
 router.post('/cancel', async (req, res) => {
+    const client = await pool.connect();
+
     try {
         const { tid, orderId, amount, reason } = req.body;
 
+        // ✅ orderId로 payment_logs 테이블에서 tid 자동 조회
+        let transactionId = tid;
+
+        if (!transactionId && orderId) {
+            const result = await client.query(
+                `SELECT tid 
+                 FROM payment_logs 
+                 WHERE order_id = $1 
+                 ORDER BY created_at DESC 
+                 LIMIT 1`,
+                [orderId]
+            );
+            if (result.rows.length > 0) {
+                transactionId = result.rows[0].tid;
+                console.log(`✅ order_id=${orderId} → tid=${transactionId} 조회 성공`);
+            } else {
+                console.warn(`⚠️ payment_logs에서 tid를 찾지 못함 (order_id=${orderId})`);
+            }
+        }
+
+        // ✅ 여전히 tid가 없으면 에러 반환
+        if (!transactionId) {
+            return res.status(400).json({
+                success: false,
+                error: '취소 실패',
+                detail: '유효한 TID를 찾을 수 없습니다.'
+            });
+        }
+
+        // ✅ 나이스페이 결제 취소 요청
         const { data } = await axios.post(
-            `${NICEPAY_BASE_URL}/payments/${tid}/cancel`,
+            `${NICEPAY_BASE_URL}/payments/${transactionId}/cancel`,
             {
                 orderId: orderId,
                 amount: amount,
@@ -314,14 +346,36 @@ router.post('/cancel', async (req, res) => {
         );
 
         console.log('✅ 결제 취소 성공:', data);
+
+        // ✅ DB 업데이트 (주문 상태 변경)
+        await client.query(
+            `UPDATE orders 
+             SET payment_status = 'cancelled', 
+                 cancelled_at = NOW(), 
+                 cancel_reason = $1, 
+                 updated_at = NOW() 
+             WHERE order_id = $2`,
+            [reason || '고객 요청', orderId]
+        );
+
+        // ✅ 배송 히스토리 추가
+        await client.query(
+            `INSERT INTO delivery_history (order_id, status, message, created_by)
+             VALUES ($1, 'cancelled', '결제가 취소되었습니다.', 'system')`,
+            [orderId]
+        );
+
         res.json({ success: true, data });
+
     } catch (error) {
         console.error('❌ 결제 취소 실패:', error.response?.data || error.message);
         res.status(500).json({
             success: false,
             error: '결제 취소 실패',
-            detail: error.response?.data
+            detail: error.response?.data || error.message
         });
+    } finally {
+        client.release();
     }
 });
 
