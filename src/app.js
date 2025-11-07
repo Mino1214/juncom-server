@@ -133,7 +133,40 @@ app.use((req, res, next) => {
 // ============================================
 // 사원 상태 관리 API
 // ============================================
+router.put('/orders/:orderId/delivery', async (req, res) => {
+    const { orderId } = req.params;
+    const {
+        recipient_name,
+        delivery_address,
+        delivery_detail_address,
+        delivery_phone,
+        delivery_request
+    } = req.body;
 
+    try {
+        const result = await pool.query(
+            `UPDATE orders
+       SET recipient_name = $1,
+           delivery_address = $2,
+           delivery_detail_address = $3,
+           delivery_phone = $4,
+           delivery_request = $5,
+           updated_at = NOW()
+       WHERE order_id = $6
+       RETURNING *`,
+            [recipient_name, delivery_address, delivery_detail_address, delivery_phone, delivery_request, orderId]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ success: false, message: '주문을 찾을 수 없습니다.' });
+        }
+
+        res.json({ success: true, order: result.rows[0] });
+    } catch (error) {
+        console.error('배송정보 수정 실패:', error);
+        res.status(500).json({ success: false, message: '배송정보 수정 실패' });
+    }
+});
 // 1. 사원 상태 조회
 app.get("/api/employee/status/check", async (req, res) => {
     const client = await pool.connect();
