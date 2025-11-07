@@ -187,7 +187,14 @@ async function saveOrderFromWebhook(webhookData) {
 // 🔹 결제 요청 (프론트엔드에 결제 정보 반환)
 router.post('/request', async (req, res) => {
     try {
-        const { orderId, amount, buyerName, buyerEmail, buyerTel, productName, returnUrl } = req.body;
+        const { orderId, amount, buyerName, buyerEmail, buyerTel, productName, returnUrl,employeeId } = req.body;
+// 결제 시작 시 주문 미리 생성
+        await pool.query(
+            `INSERT INTO orders (order_id, employee_id, user_name, user_email, user_phone, product_name, product_price, total_amount)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+       ON CONFLICT (order_id) DO NOTHING`,
+            [orderId, employeeId, buyerName, buyerEmail, buyerTel, productName, amount]
+        );
 
         // 프론트엔드에서 AUTHNICE.requestPay()에 사용할 정보 반환
         res.json({
