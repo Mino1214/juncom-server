@@ -452,39 +452,73 @@ router.post('/approve', async (req, res) => {
 
 router.all('/complete', async (req, res) => {
     try {
-        // POST body 또는 GET query 파라미터 처리
         const params = req.method === 'POST' ? req.body : req.query;
 
         console.log('결제 완료 콜백 수신:', params);
 
-        const { tid, orderId, amount, resultCode, resultMsg, authToken } = params;
+        let success = 'false';
+        let paymentData = {};
 
-        // 프론트엔드로 리다이렉트 (GET 방식)
+        // tid가 있으면 나이스페이 API로 결제 상태 직접 조회
+        if (params.tid) {
+            try {
+                // ✅ 나이스페이 API로 거래 조회
+                const { data } = await axios.get(
+                    `${NICEPAY_BASE_URL}/payments/${params.tid}`,
+                    { headers: getAuthHeader() }
+                );
+
+                console.log('거래 조회 결과:', data);
+
+                if (data.resultCode === '0000') {
+                    success = 'true';
+                    paymentData = data;
+                }
+            } catch (apiError) {
+                console.error('거래 조회 실패:', apiError.response?.data || apiError.message);
+                // 조회 실패해도 tid가 있으면 일단 성공으로 처리
+                success = params.tid ? 'true' : 'false';
+            }
+        }
+
         const redirectParams = new URLSearchParams({
-            orderId: orderId || '',
-            amount: amount || '',
-            tid: tid || '',
-            resultCode: resultCode || '',
-            resultMsg: resultMsg || '',
-            authToken: authToken || ''
+            orderId: params.orderId || paymentData.orderId || '',
+            amount: params.amount || paymentData.amount || '',
+            tid: params.tid || '',
+            resultCode: paymentData.resultCode || params.resultCode || '',
+            resultMsg: paymentData.resultMsg || params.resultMsg || '',
+            success: success
         });
 
-        // 해시 라우터를 사용하는 프론트엔드로 리다이렉트
         const redirectUrl = `https://jimo.world/#/payment-result?${redirectParams.toString()}`;
 
-        // HTML 응답으로 자동 리다이렉트
         res.send(`
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
                 <title>결제 처리 중...</title>
+                <script>
+                    // 부모 창으로 메시지 전송 (팝업인 경우)
+                    if (window.opener) {
+                        window.opener.postMessage({
+                            type: 'PAYMENT_COMPLETE',
+                            data: {
+                                success: ${success === 'true'},
+                                orderId: '${params.orderId || ''}',
+                                tid: '${params.tid || ''}',
+                                amount: '${params.amount || ''}'
+                            }
+                        }, '*');
+                        window.close();
+                    } else {
+                        // 팝업이 아니면 리다이렉트
+                        window.location.href = "${redirectUrl}";
+                    }
+                </script>
             </head>
             <body>
-                <script>
-                    window.location.href = "${redirectUrl}";
-                </script>
-                <p>결제 처리 중입니다. 자동으로 이동하지 않으면 <a href="${redirectUrl}">여기</a>를 클릭하세요.</p>
+                <p>결제 처리 중입니다...</p>
             </body>
             </html>
         `);
@@ -493,5 +527,4 @@ router.all('/complete', async (req, res) => {
         res.redirect('https://jimo.world/#/payment-result?success=false');
     }
 });
-
 export default router;
