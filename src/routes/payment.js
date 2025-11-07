@@ -466,8 +466,8 @@ router.all('/complete', async (req, res) => {
                 const { data2 } = await axios.post(
                     `${NICEPAY_BASE_URL}/payments/${params.tid}`,
                     {
-                        amount: amount,
-                        orderId: orderId
+                        amount: params.amount,
+                        orderId: params.orderId
                     },
                     { headers: getAuthHeader() }
                 );
