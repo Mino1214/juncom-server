@@ -60,19 +60,77 @@ async function saveOrderFromWebhook(webhookData) {
             );
 
             if (existingOrder.rows.length > 0) {
-                // 주문 업데이트 코드...
+                // 주문 업데이트 코드 (기존 유지)
 
-                // ✅ 주문이 있을 때만 delivery_history 추가
+                await client.query(
+                    `UPDATE orders
+         SET payment_status = 'paid',
+             tid = $2,
+             paid_at = NOW(),
+             approve_no = $3,
+             card_name = $4,
+             card_number = $5,
+             receipt_url = $6,
+             updated_at = NOW()
+         WHERE order_id = $1`,
+                    [
+                        webhookData.orderId,
+                        webhookData.tid,
+                        webhookData.approveNo,
+                        webhookData.card?.cardName || null,
+                        webhookData.card?.cardNum || null,
+                        webhookData.receiptUrl || null
+                    ]
+                );
+
                 await client.query(
                     `INSERT INTO delivery_history (order_id, status, message, created_by)
-                     VALUES ($1, 'paid', '결제가 완료되었습니다.', 'system')`,
+         VALUES ($1, 'paid', '결제가 완료되었습니다.', 'system')`,
                     [webhookData.orderId]
                 );
 
-                console.log('✅ 주문 결제 정보 업데이트 완료:', webhookData.orderId);
+                console.log('✅ 기존 주문 결제 정보 업데이트 완료:', webhookData.orderId);
             } else {
-                console.log('⚠️ 주문 정보가 없음 - delivery_history 생략:', webhookData.orderId);
-                // delivery_history INSERT를 하지 않음
+                // ✅ 주문이 없으면 새로 생성
+                await client.query(
+                    `INSERT INTO orders (
+            order_id,
+            employee_id,
+            user_name,
+            user_email,
+            user_phone,
+            product_id,
+            product_name,
+            product_price,
+            quantity,
+            total_amount,
+            payment_method,
+            payment_status,
+            tid,
+            paid_at,
+            approve_no,
+            card_name,
+            card_number,
+            receipt_url
+        ) VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, 1, $7, $8, 'paid', $9, NOW(), $10, $11, $12, $13)`,
+                    [
+                        webhookData.orderId,
+                        'SYSTEM', // employee_id 기본값 또는 webhookData.employeeId
+                        webhookData.buyerName || '미입력',
+                        webhookData.buyerEmail || null,
+                        webhookData.buyerTel || null,
+                        webhookData.goodsName || '상품명 미확인',
+                        webhookData.amount,
+                        webhookData.payMethod || 'card',
+                        webhookData.tid,
+                        webhookData.approveNo,
+                        webhookData.card?.cardName || null,
+                        webhookData.card?.cardNum || null,
+                        webhookData.receiptUrl || null
+                    ]
+                );
+
+                console.log('🆕 새 주문 레코드 생성 완료:', webhookData.orderId);
             }
         }
         // 3. 결제 취소/환불인 경우
