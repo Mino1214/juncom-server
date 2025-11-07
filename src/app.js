@@ -133,7 +133,7 @@ app.use((req, res, next) => {
 // ============================================
 // 사원 상태 관리 API
 // ============================================
-app.put('/delivery/:orderId', async (req, res) => {
+app.put('api/delivery/:orderId', async (req, res) => {
     const { orderId } = req.params;
     const {
         recipient_name,
