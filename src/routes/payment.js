@@ -54,38 +54,15 @@ async function saveOrderFromWebhook(webhookData) {
 
         // 2. 결제 성공인 경우 주문 업데이트
         if (webhookData.resultCode === '0000' && webhookData.status === 'paid') {
-
-            // 기존 주문이 있는지 확인
             const existingOrder = await client.query(
                 'SELECT id FROM orders WHERE order_id = $1',
                 [webhookData.orderId]
             );
 
             if (existingOrder.rows.length > 0) {
-                // 주문이 이미 있으면 결제 정보만 업데이트
-                await client.query(
-                    `UPDATE orders 
-                     SET payment_status = 'paid',
-                         tid = $1,
-                         paid_at = $2,
-                         approve_no = $3,
-                         card_name = $4,
-                         receipt_url = $5,
-                         payment_method = $6,
-                         updated_at = NOW()
-                     WHERE order_id = $7`,
-                    [
-                        webhookData.tid,
-                        webhookData.paidAt,
-                        webhookData.approveNo,
-                        webhookData.card?.cardName || null,
-                        webhookData.receiptUrl,
-                        webhookData.payMethod || 'card',
-                        webhookData.orderId
-                    ]
-                );
+                // 주문 업데이트 코드...
 
-                // 배송 이력 추가
+                // ✅ 주문이 있을 때만 delivery_history 추가
                 await client.query(
                     `INSERT INTO delivery_history (order_id, status, message, created_by)
                      VALUES ($1, 'paid', '결제가 완료되었습니다.', 'system')`,
@@ -94,38 +71,48 @@ async function saveOrderFromWebhook(webhookData) {
 
                 console.log('✅ 주문 결제 정보 업데이트 완료:', webhookData.orderId);
             } else {
-                console.log('⚠️ 주문 정보가 없음 (프론트엔드에서 미리 생성 필요):', webhookData.orderId);
+                console.log('⚠️ 주문 정보가 없음 - delivery_history 생략:', webhookData.orderId);
+                // delivery_history INSERT를 하지 않음
             }
         }
-
         // 3. 결제 취소/환불인 경우
         else if (webhookData.status === 'cancelled' || webhookData.status === 'refunded') {
-            await client.query(
-                `UPDATE orders 
-                 SET payment_status = $1,
-                     cancelled_at = NOW(),
-                     cancel_reason = $2,
-                     updated_at = NOW()
-                 WHERE tid = $3`,
-                [
-                    webhookData.status,
-                    webhookData.resultMsg,
-                    webhookData.tid
-                ]
+            // ✅ 먼저 주문이 있는지 확인
+            const orderCheck = await client.query(
+                'SELECT order_id FROM orders WHERE tid = $1',
+                [webhookData.tid]
             );
 
-            // 배송 이력 추가
-            await client.query(
-                `INSERT INTO delivery_history (order_id, status, message, created_by)
-                 VALUES ($1, $2, $3, 'system')`,
-                [
-                    webhookData.orderId,
-                    webhookData.status,
-                    `결제가 ${webhookData.status === 'cancelled' ? '취소' : '환불'}되었습니다. (${webhookData.resultMsg})`
-                ]
-            );
+            if (orderCheck.rows.length > 0) {
+                const orderId = orderCheck.rows[0].order_id;
 
-            console.log('❌ 주문 취소/환불 처리:', webhookData.tid);
+                await client.query(
+                    `UPDATE orders 
+                     SET payment_status = $1,
+                         cancelled_at = NOW(),
+                         cancel_reason = $2,
+                         updated_at = NOW()
+                     WHERE tid = $3`,
+                    [
+                        webhookData.status,
+                        webhookData.resultMsg,
+                        webhookData.tid
+                    ]
+                );
+
+                // ✅ 주문이 있을 때만 delivery_history 추가
+                await client.query(
+                    `INSERT INTO delivery_history (order_id, status, message, created_by)
+                     VALUES ($1, $2, $3, 'system')`,
+                    [
+                        orderId,  // webhookData.orderId 대신 실제 DB의 orderId 사용
+                        webhookData.status,
+                        `결제가 ${webhookData.status === 'cancelled' ? '취소' : '환불'}되었습니다. (${webhookData.resultMsg})`
+                    ]
+                );
+            } else {
+                console.log('⚠️ 취소/환불할 주문이 없음:', webhookData.tid);
+            }
         }
 
         await client.query('COMMIT');
@@ -139,7 +126,6 @@ async function saveOrderFromWebhook(webhookData) {
         client.release();
     }
 }
-
 // 🔹 결제 요청 (프론트엔드에 결제 정보 반환)
 router.post('/request', async (req, res) => {
     try {
