@@ -436,4 +436,31 @@ router.post('/webhook/test', async (req, res) => {
     }
 });
 
+// payment.js에 추가
+router.post('/approve', async (req, res) => {
+    try {
+        const { tid, orderId, amount } = req.body;
+
+        // 나이스페이 서버에 최종 승인 요청
+        const { data } = await axios.post(
+            `${NICEPAY_BASE_URL}/payments/${tid}`,
+            {
+                amount: amount,
+                orderId: orderId
+            },
+            { headers: getAuthHeader() }
+        );
+
+        res.json({
+            success: true,
+            message: '결제가 정상적으로 처리되었습니다',
+            data: data
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: '결제 승인에 실패했습니다'
+        });
+    }
+});
 export default router;
