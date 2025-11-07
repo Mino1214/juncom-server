@@ -564,7 +564,7 @@ router.all('/complete', async (req, res) => {
             success: success
         });
 
-        const redirectUrl = `https://jimo.world/#/payment-result?${redirectParams.toString()}`;
+        const redirectUrl = `https://cleanupsystems.shop/#/payment-result?${redirectParams.toString()}`;
 
         res.send(`
             <!DOCTYPE html>
@@ -598,7 +598,7 @@ router.all('/complete', async (req, res) => {
         `);
     } catch (error) {
         console.error('결제 완료 처리 오류:', error);
-        res.redirect('https://jimo.world/#/payment-result?success=false');
+        res.redirect('https://cleanupsystems.shop/#/payment-result?success=false');
     }
 });
 export default router;
