@@ -464,7 +464,7 @@ router.all('/complete', async (req, res) => {
         if (params.tid) {
             try {
                 const { data2 } = await axios.post(
-                    `${NICEPAY_BASE_URL}/payments/${tid}`,
+                    `${NICEPAY_BASE_URL}/payments/${params.tid}`,
                     {
                         amount: amount,
                         orderId: orderId
