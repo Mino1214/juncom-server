@@ -458,10 +458,19 @@ router.all('/complete', async (req, res) => {
 
         let success = 'false';
         let paymentData = {};
+// 나이스페이 서버에 결제 승인 요청
 
         // tid가 있으면 나이스페이 API로 결제 상태 직접 조회
         if (params.tid) {
             try {
+                const { data2 } = await axios.post(
+                    `${NICEPAY_BASE_URL}/payments/${tid}`,
+                    {
+                        amount: amount,
+                        orderId: orderId
+                    },
+                    { headers: getAuthHeader() }
+                );
                 // ✅ 나이스페이 API로 거래 조회
                 const { data } = await axios.get(
                     `${NICEPAY_BASE_URL}/payments/${params.tid}`,
