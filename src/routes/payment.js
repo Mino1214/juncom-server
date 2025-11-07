@@ -172,7 +172,7 @@ router.post('/request', async (req, res) => {
 });
 
 // 🔹 결제 승인 처리 (returnUrl로 돌아왔을 때 호출)
-router.post('/result', async (req, res) => {
+router.all('/result', async (req, res) => {
     try {
         const { tid, orderId, amount } = req.body;
 
