@@ -233,38 +233,82 @@ router.post('/request', async (req, res) => {
 });
 
 // 🔹 결제 승인 처리 (returnUrl로 돌아왔을 때 호출)
-router.all('/result', async (req, res) => {
+router.post("/result", async (req, res) => {
+    const { tid, orderId, amount } = req.body;
+    const client = await pool.connect();
+
     try {
-        const { tid, orderId, amount } = req.body;
+        if (!tid) return res.status(400).json({ success: false, message: "tid 누락됨" });
 
-        console.log('결제 승인 요청:', { tid, orderId, amount });
+        console.log("💳 결제 결과 수신:", { tid, orderId, amount });
 
-        // 나이스페이 서버에 결제 승인 요청
-        const { data } = await axios.post(
-            `${NICEPAY_BASE_URL}/payments/${tid}`,
-            {
-                amount: amount,
-                orderId: orderId
-            },
+        // ✅ NICEPAY 거래 상태 조회 (결제 확인)
+        const { data } = await axios.get(
+            `${process.env.NICEPAY_BASE_URL || "https://api.nicepay.co.kr/v1/payments"}/${tid}`,
             { headers: getAuthHeader() }
         );
 
-        console.log('✅ 결제 승인 성공:', data);
+        console.log("🔍 NICEPAY 조회 결과:", data);
 
-        res.json({
-            success: true,
-            data: data
-        });
-    } catch (error) {
-        console.error('❌ 결제 승인 실패:', error.response?.data || error.message);
+        if (data?.resultCode === "0000" || data?.status === "paid") {
+            // ✅ 1️⃣ payment_log에서 order_id 조회
+            const { rows: logRows } = await client.query(
+                "SELECT order_id FROM payment_log WHERE tid = $1 LIMIT 1",
+                [tid]
+            );
+
+            const finalOrderId = logRows[0]?.order_id || orderId;
+            if (!finalOrderId)
+                throw new Error("payment_log 또는 요청에서 order_id를 찾을 수 없음");
+
+            await client.query("BEGIN");
+
+            // ✅ 2️⃣ 주문 상태를 paid로 업데이트
+            await client.query(
+                `UPDATE orders
+                 SET payment_status = 'paid',
+                     paid_at = NOW()
+                 WHERE order_id = $1`,
+                [finalOrderId]
+            );
+
+            // ✅ 3️⃣ 로그 남기기
+            await client.query(
+                `INSERT INTO payment_log (tid, order_id, status, message, created_at)
+                 VALUES ($1, $2, 'paid', '결제 완료', NOW())
+                 ON CONFLICT (tid) DO UPDATE
+                 SET status = 'paid', message = '결제 완료', updated_at = NOW()`,
+                [tid, finalOrderId]
+            );
+
+            await client.query("COMMIT");
+
+            console.log(`✅ 주문 ${finalOrderId} 결제 완료 처리됨`);
+            return res.json({
+                success: true,
+                message: "결제가 성공적으로 완료되었습니다.",
+                orderId: finalOrderId,
+                amount,
+            });
+        } else {
+            console.warn(`❌ 결제 실패 또는 미승인: ${tid}`);
+            return res.json({
+                success: false,
+                message: "결제 실패 또는 승인되지 않음",
+            });
+        }
+    } catch (err) {
+        await client.query("ROLLBACK").catch(() => {});
+        console.error("💥 결제 결과 처리 중 오류:", err.message);
         res.status(500).json({
             success: false,
-            error: '결제 승인 실패',
-            detail: error.response?.data
+            message: "결제 결과 처리 실패",
+            error: err.message,
         });
+    } finally {
+        client.release();
     }
 });
-
 // 🔹 결제 취소
 router.post('/cancel', async (req, res) => {
     const client = await pool.connect();
