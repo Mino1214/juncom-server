@@ -624,18 +624,37 @@ app.get("/api/admin/verifications/:email", verifyToken, requireRole("admin"), as
 // 주문 존재 여부 확인
 app.get("/api/payment/order/check/:employeeId", async (req, res) => {
     const { employeeId } = req.params;
-    try {
-        const result = await pool.query(
-            `SELECT id FROM orders WHERE employee_id = $1 AND status != 'canceled' LIMIT 1`,
-            [employeeId]
-        );
+    const client = await pool.connect();
 
+    try {
+        console.log("🔍 주문 확인 요청:", employeeId);
+
+        // ✅ 1. 테이블 구조에 맞게 컬럼명 정확히
+        const query = `
+            SELECT id, employee_id, status
+            FROM orders
+            WHERE employee_id = $1
+              AND (status IS NULL OR status != 'canceled')
+            LIMIT 1;
+        `;
+
+        const result = await client.query(query, [employeeId]);
+
+        console.log("🟢 조회 결과:", result.rows);
+
+        // ✅ 2. 결과 반환
         res.json({
             hasActiveOrder: result.rows.length > 0,
         });
     } catch (err) {
-        console.error("Order check error:", err);
-        res.status(500).json({ message: "주문 확인 실패" });
+        console.error("❌ Order check error:", err.message);
+        console.error("📜 Full stack:", err);
+        res.status(500).json({
+            message: "주문 확인 실패",
+            error: err.message,
+        });
+    } finally {
+        client.release();
     }
 });
 // ============================================
