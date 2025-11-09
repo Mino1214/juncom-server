@@ -634,7 +634,7 @@ app.get("/api/payment/order/check/:employeeId", async (req, res) => {
             SELECT id, employee_id, payment_status
             FROM orders
             WHERE employee_id = $1
-              AND (status IS NULL OR status != 'canceled')
+              AND (payment_status IS NULL OR payment_status != 'canceled')
             LIMIT 1;
         `;
 
