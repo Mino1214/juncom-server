@@ -632,7 +632,7 @@ router.post("/verify", async (req, res) => {
 
         // ✅ 1️⃣ tid로 payment_log에서 order_id 찾기
         const { rows: payLogs } = await client.query(
-            "SELECT order_id FROM payment_log WHERE tid = $1 LIMIT 1",
+            "SELECT order_id FROM payment_logs WHERE tid = $1 LIMIT 1",
             [tid]
         );
         if (payLogs.length === 0) {
