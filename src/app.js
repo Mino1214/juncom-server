@@ -631,7 +631,7 @@ app.get("/api/payment/order/check/:employeeId", async (req, res) => {
 
         // ✅ 1. 테이블 구조에 맞게 컬럼명 정확히
         const query = `
-            SELECT id, employee_id, status
+            SELECT id, employee_id, payment_status
             FROM orders
             WHERE employee_id = $1
               AND (status IS NULL OR status != 'canceled')
