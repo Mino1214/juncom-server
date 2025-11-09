@@ -715,13 +715,10 @@ app.get("/api/products/test", async (req, res) => {
     const client = await pool.connect();
     try {
         const now = new Date();
-        const result = await client.query(
-            `SELECT * FROM products
-             WHERE id = 99
-             AND is_visible = true
-             ORDER BY release_date DESC`,
-            []
-        );
+        const result = await client.query(`
+            SELECT * FROM products
+            WHERE id = 99
+        `);
 
         console.log("조회된 상품:", result.rows);
 
