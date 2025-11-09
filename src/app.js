@@ -635,7 +635,7 @@ app.get("/api/all/orders", async (req, res) => {
         o.created_at AS approved_at,
         o.cancelled_at AS cancelled_at,
         o.payment_method,
-        p.goods_name AS product_name,
+        p.product_name AS product_name,
         p.tid,
         p.cancel_reason
       FROM orders o
