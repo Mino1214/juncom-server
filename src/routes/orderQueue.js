@@ -1,8 +1,10 @@
-import { Worker, QueueScheduler } from "bullmq";
+import pkg from "bullmq"; // ✅ CommonJS 모듈 default import
 import IORedis from "ioredis";
 import pg from "pg";
 
+const { Worker, QueueScheduler } = pkg; // ✅ 구조 분해
 const { Pool } = pg;
+
 const connection = new IORedis({ host: "127.0.0.1", port: 6379 });
 
 const pool = new Pool({
