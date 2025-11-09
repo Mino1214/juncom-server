@@ -187,8 +187,9 @@ async function saveOrderFromWebhook(webhookData) {
 }
 // 🔹 결제 요청 (프론트엔드에 결제 정보 반환)
 router.post('/request', async (req, res) => {
+    const client = await pool.connect();
     try {
-                const {
+        const {
             orderId,
             amount,
             buyerName,
@@ -204,31 +205,55 @@ router.post('/request', async (req, res) => {
             deliveryPhone,
             deliveryRequest
         } = req.body;
-// 결제 시작 시 주문 미리 생성
 
-        // 프론트엔드에서 AUTHNICE.requestPay()에 사용할 정보 반환
+        // ✅ 1️⃣ 주문 존재 확인 후 배송정보 업데이트
+        if (orderId) {
+            await client.query(
+                `UPDATE orders
+                 SET 
+                    recipient_name = $1,
+                    delivery_address = $2,
+                    delivery_detail_address = $3,
+                    delivery_phone = $4,
+                    delivery_request = $5,
+                    updated_at = NOW()
+                 WHERE order_id = $6`,
+                [
+                    recipientName || null,
+                    deliveryAddress || null,
+                    deliveryDetailAddress || null,
+                    deliveryPhone || null,
+                    deliveryRequest || null,
+                    orderId
+                ]
+            );
+            console.log(`📦 주문 ${orderId} 배송 정보 업데이트 완료`);
+        }
+
+        // ✅ 2️⃣ 프론트엔드에서 AUTHNICE.requestPay()에 사용할 정보 반환
         res.json({
             success: true,
             result: {
                 clientId: NICEPAY_CLIENT_ID,
-                orderId: orderId,
-                amount: amount,
-                // amount : 1000,  // 테스트용 고정금액
+                orderId,
+                amount,
                 goodsName: productName,
-                returnUrl: returnUrl,
-                buyerName: buyerName,
-                buyerEmail: buyerEmail,
-                buyerTel: buyerTel,
+                returnUrl,
+                buyerName,
+                buyerEmail,
+                buyerTel,
                 payMethod: 'CARD' // ✅ 신용카드 결제만 허용
             }
         });
     } catch (error) {
-        console.error('결제 요청 실패:', error.message);
+        console.error('❌ 결제 요청 실패:', error.message);
         res.status(500).json({
             success: false,
             error: '결제 요청 실패',
             detail: error.message
         });
+    } finally {
+        client.release();
     }
 });
 
