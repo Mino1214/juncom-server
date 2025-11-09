@@ -68,4 +68,4 @@ worker.on("failed", (job, err) => {
     console.error(`💥 Job 실패: ${job.id} (${err.message})`);
 });
 
-export default orderQueue;
+export const orderQueue = new Queue("orderInitQueue", { connection });
