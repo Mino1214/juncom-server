@@ -309,6 +309,7 @@ router.post('/cancel', async (req, res) => {
                  LIMIT 1`,
                 [orderId]
             );
+
             if (result.rows.length > 0) {
                 transactionId = result.rows[0].tid;
                 console.log(`✅ order_id=${orderId} → tid=${transactionId} 조회 성공`);
@@ -356,7 +357,15 @@ router.post('/cancel', async (req, res) => {
              VALUES ($1, 'cancelled', '결제가 취소되었습니다.', 'system')`,
             [orderId]
         );
+        const productId = orderRows[0].product_id;
 
+        // ✅ 재고 복구
+        await client.query(
+            `UPDATE products 
+                 SET stock = stock + 1, updated_at = NOW()
+                 WHERE id = $1`,
+            [productId]
+        );
         res.json({ success: true, data });
 
     } catch (error) {
@@ -712,36 +721,6 @@ router.all('/complete', async (req, res) => {
                     success = 'true';
                     paymentData = data;
                 }
-                const orderId = payLogs[0].order_id;
-
-                // ✅ 2️⃣ order_id로 orders 테이블 조회 후 상태 변경
-                const { rows: orderRows } = await client.query(
-                    "SELECT order_id, payment_status FROM orders WHERE order_id = $1 LIMIT 1",
-                    [orderId]
-                );
-                if (orderRows.length === 0) {
-                    return res.status(404).json({
-                        success: false,
-                        message: "해당 주문을 찾을 수 없습니다.",
-                    });
-                }
-
-                const currentStatus = orderRows[0].payment_status;
-                if (currentStatus === "paid") {
-                    return res.json({ success: true, message: "이미 결제 완료된 주문입니다.", orderId });
-                }
-
-                // ✅ 3️⃣ orders 상태 갱신
-                await client.query(
-                    `
-      UPDATE orders
-      SET payment_status = 'paid',
-          paid_at = $1,
-          total_amount = $2
-      WHERE order_id = $3
-    `,
-                    [paidAt, paidAmount, orderId]
-                );
             } catch (apiError) {
                 console.error('거래 조회 실패:', apiError.response?.data || apiError.message);
                 success = params.tid ? 'true' : 'false';
