@@ -717,10 +717,10 @@ app.get("/api/products/test", async (req, res) => {
         const now = new Date();
         const result = await client.query(
             `SELECT * FROM products
-             AND is_visible = false
-             ORDER BY release_date DESC`,
-            []
+             WHERE is_visible = false
+             ORDER BY release_date DESC`
         );
+
 
         console.log("조회된 상품:", result.rows);
 
