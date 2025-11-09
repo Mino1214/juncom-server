@@ -94,4 +94,50 @@ router.get('/api/address/coord2address', async (req, res) => {
     }
 });
 
+
+// ✅ 관리자용 주문 현황 조회 API
+router.get("/api/all/orders", async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const result = await client.query(`
+      SELECT 
+        o.order_id,
+        o.user_name AS buyer,
+        o.total_amount AS transaction_amount,
+        o.payment_status,
+        o.created_at AS approved_at,
+        o.cancelled_at AS cancelled_at,
+        o.payment_method,
+        p.goods_name AS product_name,
+        p.tid,
+        p.cancel_reason
+      FROM orders o
+      LEFT JOIN payment_logs p ON o.order_id = p.order_id
+      ORDER BY o.created_at DESC
+      LIMIT 200
+    `);
+
+        res.json({
+            success: true,
+            count: result.rows.length,
+            orders: result.rows.map((row, idx) => ({
+                no: idx + 1,
+                결제수단: row.payment_method || "신용카드",
+                거래상태: row.payment_status === "cancelled" ? "전체취소" : "정상",
+                승인일자: row.approved_at,
+                취소일자: row.cancelled_at,
+                거래금액: row.transaction_amount ? -Math.abs(row.transaction_amount) : 0,
+                상품명: row.product_name,
+                주문번호: row.order_id,
+                구매자: row.buyer,
+                취소사유: row.cancel_reason || "-",
+            })),
+        });
+    } catch (err) {
+        console.error("❌ 관리자 주문 조회 실패:", err);
+        res.status(500).json({ success: false, message: "서버 오류" });
+    } finally {
+        client.release();
+    }
+});
 export default router;
