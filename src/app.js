@@ -627,22 +627,19 @@ app.get("/api/all/orders", async (req, res) => {
     const client = await pool.connect();
     try {
         const result = await client.query(`
-      SELECT 
-        o.order_id,
-        o.user_name AS buyer,
-        o.total_amount AS transaction_amount,
-        o.payment_status,
-        o.created_at AS approved_at,
-        o.cancelled_at AS cancelled_at,
-        o.payment_method,
-        p.product_name AS product_name,
-        p.tid,
-        p.cancel_reason
-      FROM orders o
-      LEFT JOIN payment_logs p ON o.order_id = p.order_id
-      ORDER BY o.created_at DESC
-      LIMIT 200
-    `);
+            SELECT 
+                order_id,
+                user_name AS buyer,
+                total_amount AS transaction_amount,
+                payment_status,
+                created_at AS approved_at,
+                cancelled_at,
+                payment_method,
+                product_name
+            FROM orders
+            ORDER BY created_at DESC
+            LIMIT 200
+        `);
 
         res.json({
             success: true,
@@ -650,14 +647,21 @@ app.get("/api/all/orders", async (req, res) => {
             orders: result.rows.map((row, idx) => ({
                 no: idx + 1,
                 결제수단: row.payment_method || "신용카드",
-                거래상태: row.payment_status === "cancelled" ? "전체취소" : "정상",
+                거래상태:
+                    row.payment_status === "cancelled"
+                        ? "전체취소"
+                        : row.payment_status === "paid"
+                            ? "정상"
+                            : "대기중",
                 승인일자: row.approved_at,
                 취소일자: row.cancelled_at,
-                거래금액: row.transaction_amount ? -Math.abs(row.transaction_amount) : 0,
+                거래금액:
+                    row.payment_status === "cancelled"
+                        ? -Math.abs(row.transaction_amount)
+                        : row.transaction_amount,
                 상품명: row.product_name,
                 주문번호: row.order_id,
                 구매자: row.buyer,
-                취소사유: row.cancel_reason || "-",
             })),
         });
     } catch (err) {
@@ -666,8 +670,7 @@ app.get("/api/all/orders", async (req, res) => {
     } finally {
         client.release();
     }
-});
-// 주문 존재 여부 확인
+});// 주문 존재 여부 확인
 app.get("/api/payment/order/check/:employeeId", async (req, res) => {
     const { employeeId } = req.params;
     const client = await pool.connect();
