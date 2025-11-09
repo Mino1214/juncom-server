@@ -621,7 +621,23 @@ app.get("/api/admin/verifications/:email", verifyToken, requireRole("admin"), as
         client.release();
     }
 });
+// 주문 존재 여부 확인
+app.get("/api/payment/order/check/:employeeId", async (req, res) => {
+    const { employeeId } = req.params;
+    try {
+        const result = await pool.query(
+            `SELECT id FROM orders WHERE employee_id = $1 AND status != 'canceled' LIMIT 1`,
+            [employeeId]
+        );
 
+        res.json({
+            hasActiveOrder: result.rows.length > 0,
+        });
+    } catch (err) {
+        console.error("Order check error:", err);
+        res.status(500).json({ message: "주문 확인 실패" });
+    }
+});
 // ============================================
 // 4. 만료된 인증번호 정리 (크론잡용) - 수정 불필요
 // ============================================
