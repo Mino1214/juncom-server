@@ -353,7 +353,7 @@ router.post('/cancel', async (req, res) => {
             [reason || '고객 요청', orderId]
         );
 
-        // ✅ product_id 조회
+        // ✅ orders 테이블에서 product_id 조회
         const { rows: orderRows } = await client.query(
             `SELECT product_id FROM orders WHERE order_id = $1 LIMIT 1`,
             [orderId]
@@ -365,10 +365,11 @@ router.post('/cancel', async (req, res) => {
             // ✅ 재고 복구
             await client.query(
                 `UPDATE products 
-                 SET stock = stock + 1, updated_at = NOW()
-                 WHERE id = $1`,
+         SET stock = stock + 1, updated_at = NOW()
+         WHERE id = $1`,
                 [productId]
             );
+
             console.log(`🔄 상품 ${productId} 재고 복원 완료`);
         } else {
             console.warn(`⚠️ 주문 ${orderId}의 상품 ID를 찾을 수 없습니다`);
