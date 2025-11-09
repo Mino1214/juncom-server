@@ -331,8 +331,8 @@ router.post('/cancel', async (req, res) => {
         const { data } = await axios.post(
             `${NICEPAY_BASE_URL}/payments/${transactionId}/cancel`,
             {
-                orderId: orderId,
-                amount: amount,
+                orderId,
+                amount,
                 reason: reason || '고객 요청'
             },
             { headers: getAuthHeader() }
@@ -340,7 +340,9 @@ router.post('/cancel', async (req, res) => {
 
         console.log('✅ 결제 취소 성공:', data);
 
-        // ✅ DB 업데이트 (주문 상태 변경)
+        await client.query('BEGIN');
+
+        // ✅ 주문 상태 변경
         await client.query(
             `UPDATE orders 
              SET payment_status = 'cancelled', 
@@ -351,24 +353,40 @@ router.post('/cancel', async (req, res) => {
             [reason || '고객 요청', orderId]
         );
 
+        // ✅ product_id 조회
+        const { rows: orderRows } = await client.query(
+            `SELECT product_id FROM orders WHERE order_id = $1 LIMIT 1`,
+            [orderId]
+        );
+
+        if (orderRows.length > 0 && orderRows[0].product_id) {
+            const productId = orderRows[0].product_id;
+
+            // ✅ 재고 복구
+            await client.query(
+                `UPDATE products 
+                 SET stock = stock + 1, updated_at = NOW()
+                 WHERE id = $1`,
+                [productId]
+            );
+            console.log(`🔄 상품 ${productId} 재고 복원 완료`);
+        } else {
+            console.warn(`⚠️ 주문 ${orderId}의 상품 ID를 찾을 수 없습니다`);
+        }
+
         // ✅ 배송 히스토리 추가
         await client.query(
             `INSERT INTO delivery_history (order_id, status, message, created_by)
              VALUES ($1, 'cancelled', '결제가 취소되었습니다.', 'system')`,
             [orderId]
         );
-        const productId = orderRows[0].product_id;
 
-        // ✅ 재고 복구
-        await client.query(
-            `UPDATE products 
-                 SET stock = stock + 1, updated_at = NOW()
-                 WHERE id = $1`,
-            [productId]
-        );
+        await client.query('COMMIT');
+
         res.json({ success: true, data });
 
     } catch (error) {
+        await client.query('ROLLBACK');
         console.error('❌ 결제 취소 실패:', error.response?.data || error.message);
         res.status(500).json({
             success: false,
@@ -379,7 +397,6 @@ router.post('/cancel', async (req, res) => {
         client.release();
     }
 });
-
 // 🔹 웹훅 수신 엔드포인트 (나이스페이에서 호출)
 router.post('/webhook', async (req, res) => {
     console.log('====================================');
