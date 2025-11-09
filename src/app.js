@@ -710,7 +710,30 @@ app.get("/api/products/visible", async (req, res) => {
     } finally {
         client.release();
     }
-});// 1. 일반 로그인 (사번/비밀번호)
+});
+app.get("/api/products/test", async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const now = new Date();
+        const result = await client.query(
+            `SELECT * FROM products
+             WHERE id = 99
+             AND is_visible = true
+             ORDER BY release_date DESC`,
+            []
+        );
+
+        console.log("조회된 상품:", result.rows);
+
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Visible products error:", error);
+        res.status(500).json({ message: "상품 목록 조회 실패" });
+    } finally {
+        client.release();
+    }
+});
+// 1. 일반 로그인 (사번/비밀번호)
 // 1️⃣ 비밀번호 초기화 (개발용)
 app.post("/api/dev/reset-password", async (req, res) => {
     const client = await pool.connect();
