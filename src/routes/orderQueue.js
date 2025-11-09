@@ -67,3 +67,5 @@ worker.on("completed", (job, result) => {
 worker.on("failed", (job, err) => {
     console.error(`💥 Job 실패: ${job.id} (${err.message})`);
 });
+
+export default orderQueue;
