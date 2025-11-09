@@ -1,4 +1,4 @@
-import pkg from "bullmq"; // ✅ CommonJS 모듈 default import
+import pkg, {Queue} from "bullmq"; // ✅ CommonJS 모듈 default import
 import IORedis from "ioredis";
 import pg from "pg";
 
