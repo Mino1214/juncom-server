@@ -1,6 +1,8 @@
 import express from 'express';
 import axios from 'axios';
 import pg from 'pg';
+import orderQueue from "nodemailer/lib/fetch/cookies.js";
+import redis from "../redis.js";
 
 const router = express.Router();
 const { Pool } = pg;
@@ -187,57 +189,57 @@ async function saveOrderFromWebhook(webhookData) {
 // 🔹 결제 요청 (프론트엔드에 결제 정보 반환)
 router.post('/request', async (req, res) => {
     try {
-        const {
-            orderId,
-            amount,
-            buyerName,
-            buyerEmail,
-            buyerTel,
-            productName,
-            productId,
-            returnUrl,
-            employeeId,
-            recipientName,
-            deliveryAddress,
-            deliveryDetailAddress,
-            deliveryPhone,
-            deliveryRequest
-        } = req.body;
-// 결제 시작 시 주문 미리 생성
-        await pool.query(
-            `INSERT INTO orders (
-                order_id,
-                employee_id,
-                user_name,
-                user_email,
-                user_phone,
-                product_id,
-                product_name,
-                product_price,
-                total_amount,
-                recipient_name,
-                delivery_address,
-                delivery_detail_address,
-                delivery_phone,
-                delivery_request
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10, $11, $12, $13)
-                 ON CONFLICT (order_id) DO NOTHING`,
-            [
-                orderId,
-                employeeId,
-                buyerName,
-                buyerEmail,
-                buyerTel,
-                productId,
-                productName,
-                amount,
-                recipientName,
-                deliveryAddress,
-                deliveryDetailAddress,
-                deliveryPhone,
-                deliveryRequest
-            ]
-        );
+        //         const {
+//             orderId,
+//             amount,
+//             buyerName,
+//             buyerEmail,
+//             buyerTel,
+//             productName,
+//             productId,
+//             returnUrl,
+//             employeeId,
+//             recipientName,
+//             deliveryAddress,
+//             deliveryDetailAddress,
+//             deliveryPhone,
+//             deliveryRequest
+//         } = req.body;
+// // 결제 시작 시 주문 미리 생성
+//         await pool.query(
+//             `INSERT INTO orders (
+//                 order_id,
+//                 employee_id,
+//                 user_name,
+//                 user_email,
+//                 user_phone,
+//                 product_id,
+//                 product_name,
+//                 product_price,
+//                 total_amount,
+//                 recipient_name,
+//                 delivery_address,
+//                 delivery_detail_address,
+//                 delivery_phone,
+//                 delivery_request
+//             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10, $11, $12, $13)
+//                  ON CONFLICT (order_id) DO NOTHING`,
+//             [
+//                 orderId,
+//                 employeeId,
+//                 buyerName,
+//                 buyerEmail,
+//                 buyerTel,
+//                 productId,
+//                 productName,
+//                 amount,
+//                 recipientName,
+//                 deliveryAddress,
+//                 deliveryDetailAddress,
+//                 deliveryPhone,
+//                 deliveryRequest
+//             ]
+//         );
 
         // 프론트엔드에서 AUTHNICE.requestPay()에 사용할 정보 반환
         res.json({
@@ -660,4 +662,31 @@ router.all('/complete', async (req, res) => {
         return res.redirect('https://cleanupsystems.shop/#/payment-result?success=false');
     }
 });
+
+router.post('/queue/init', async (req, res) => {
+    try {
+        const { productId, userId } = req.body;
+        const job = await orderQueue.add('createOrder', { productId, userId });
+        const waitingCount = await redis.llen('bull:orderInitQueue:wait');
+        res.json({ success: true, jobId: job.id, position: waitingCount + 1 });
+    } catch (e) {
+        console.error('큐 등록 실패:', e);
+        res.status(500).json({ success: false });
+    }
+});
+
+router.get('/queue/status/:jobId', async (req, res) => {
+    try {
+        const job = await orderQueue.getJob(req.params.jobId);
+        if (!job) return res.status(404).json({ success: false });
+        const state = await job.getState();
+        if (state === 'completed') return res.json({ status: 'done', result: job.returnvalue });
+        if (state === 'failed') return res.json({ status: 'failed' });
+        const waiting = await redis.llen('bull:orderInitQueue:wait');
+        res.json({ status: 'waiting', position: waiting });
+    } catch (e) {
+        res.status(500).json({ success: false });
+    }
+});
+
 export default router;
