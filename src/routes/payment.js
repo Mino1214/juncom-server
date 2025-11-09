@@ -664,10 +664,22 @@ router.all('/complete', async (req, res) => {
 
 router.post('/queue/init', async (req, res) => {
     try {
-        const { productId, userId } = req.body;
-        const job = await orderQueue.add('createOrder', { productId, userId });
+        const { productId, employeeId, userName, userEmail, userPhone } = req.body;
+
+        const job = await orderQueue.add('createOrder', {
+            productId,
+            employeeId,
+            userName,
+            userEmail,
+            userPhone,
+        });
+
         const waitingCount = await redis.llen('bull:orderInitQueue:wait');
-        res.json({ success: true, jobId: job.id, position: waitingCount + 1 });
+        res.json({
+            success: true,
+            jobId: job.id,
+            position: waitingCount + 1,
+        });
     } catch (e) {
         console.error('큐 등록 실패:', e);
         res.status(500).json({ success: false });
