@@ -2,7 +2,7 @@ import express from 'express';
 import axios from 'axios';
 import pg from 'pg';
 import redis from "../redis.js";
-import orderQueue from "./orderQueue.js";
+import { orderQueue } from "./orderQueue.js";
 const router = express.Router();
 const { Pool } = pg;
 
