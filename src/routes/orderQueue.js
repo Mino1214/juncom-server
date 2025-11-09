@@ -11,7 +11,7 @@ const connection = new IORedis({
 
 console.log("✅ Redis connected");
 
-// 큐 정의
+// 큐 정의 (한 번만!)
 export const orderQueue = new Queue("orderInitQueue", { connection });
 
 // 워커 정의
@@ -20,17 +20,15 @@ const worker = new Worker(
     async (job) => {
         console.log(`⚙️ 작업 시작: ${job.id}`, job.data);
 
-        // 여기에 실제 주문 처리 로직
         const { productId, userId } = job.data;
         const orderId = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
         console.log(`✅ 주문 생성 완료: ${orderId}`);
         return { orderId };
     },
     { connection }
 );
 
-// 이벤트 핸들러
+// 이벤트 로그
 worker.on("completed", (job, result) => {
     console.log(`✅ Job 완료: ${job.id} → ${result.orderId}`);
 });
@@ -38,5 +36,3 @@ worker.on("completed", (job, result) => {
 worker.on("failed", (job, err) => {
     console.error(`💥 Job 실패: ${job.id} (${err.message})`);
 });
-
-export const orderQueue = new Queue("orderInitQueue", { connection });
