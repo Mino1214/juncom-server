@@ -674,14 +674,14 @@ app.get("/api/all/orders", async (req, res) => {
 // ✅ 회원 목록 조회 API
 app.get("/api/users", async (req, res) => {
     try {
-        const [rows] = await pool.query(
-            `SELECT id, name, email, created_at 
-             FROM users
-             WHERE email LIKE '%@kr.kpmg.co.kr%'
-             ORDER BY created_at DESC 
-             LIMIT 100`
-        );
-        res.json({ success: true, users: rows });
+        const result = await pool.query(`
+    SELECT id, name, email, created_at
+    FROM users
+    WHERE email LIKE '%@kr.kpmg.co.kr%'
+    ORDER BY created_at DESC
+    LIMIT 100
+`);
+        res.json({ success: true, users: result.rows });
     } catch (err) {
         console.error("회원 조회 실패:", err);
         res.status(500).json({ success: false, message: "서버 오류" });
