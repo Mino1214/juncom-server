@@ -676,8 +676,8 @@ app.get("/api/users", async (req, res) => {
     try {
         const [rows] = await pool.query(
             `SELECT id, name, email, created_at 
-             FROM users 
-             WHERE email contains '@kr.kpmg.co.kr'
+             FROM users
+             WHERE email LIKE '%@kr.kpmg.co.kr%'
              ORDER BY created_at DESC 
              LIMIT 100`
         );
