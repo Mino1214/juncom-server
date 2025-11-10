@@ -675,11 +675,11 @@ app.get("/api/all/orders", async (req, res) => {
 app.get("/api/users", async (req, res) => {
     try {
         const result = await pool.query(`
-    SELECT id, name, email, created_at
-    FROM users
-    WHERE email LIKE '%@kr.kpmg.co.kr%'
-    ORDER BY created_at DESC
-    LIMIT 100
+            SELECT id, name, email, created_at
+            FROM users
+            WHERE email ILIKE '%@kr.kpmg.com'
+            ORDER BY created_at DESC
+                LIMIT 100
 `);
         res.json({ success: true, users: result.rows });
     } catch (err) {
