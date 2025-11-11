@@ -678,16 +678,22 @@ app.get("/api/users", async (req, res) => {
         const limit = parseInt(req.query.limit) || 50;
         const offset = (page - 1) * limit;
 
-        const result = await pool.query(`
-            SELECT id, name, email, created_at
-            FROM users
-            WHERE email ILIKE '%@kr.kpmg.com'
-            ORDER BY created_at DESC
-            LIMIT $1 OFFSET $2
-        `, [limit, offset]);
+        // 🔹 특정 도메인 필터 유지 (필요 시 제거)
+        const result = await pool.query(
+            `
+      SELECT id, name, email, created_at
+      FROM users
+      WHERE email ILIKE '%@kr.kpmg.com'
+      ORDER BY created_at DESC
+      LIMIT $1 OFFSET $2
+      `,
+            [limit, offset]
+        );
 
-        // 전체 회원 수 확인
-        const countResult = await pool.query(`SELECT COUNT(*) FROM users`);
+        const countResult = await pool.query(`
+      SELECT COUNT(*) FROM users WHERE email ILIKE '%@kr.kpmg.com'
+    `);
+
         const totalCount = parseInt(countResult.rows[0].count);
         const hasMore = offset + limit < totalCount;
 
