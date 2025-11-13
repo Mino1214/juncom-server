@@ -1911,6 +1911,34 @@ const uploadsPath = path.join(__dirname, "uploads");
 // app.use("/api/uploads", express.static("uploads"));
 app.use("/api/uploads", express.static(uploadsPath));
 //
+
+app.post("/api/payment/queue/cancel", async (req, res) => {
+    try {
+        const { productId, jobId } = req.body;
+
+        if (!productId || !jobId) {
+            return res.json({ success: false, message: "필수값 누락" });
+        }
+
+        const listKey = `queue:list:${productId}`;
+        const mapKey = `queue:map:${jobId}`;
+        const statusKey = `queue:status:${jobId}`;
+
+        // 1️⃣ 리스트에서 해당 jobId 제거
+        await redis.lrem(listKey, 1, jobId);
+
+        // 2️⃣ job map 삭제
+        await redis.del(mapKey);
+
+        // 3️⃣ status도 삭제
+        await redis.del(statusKey);
+
+        return res.json({ success: true });
+    } catch (err) {
+        console.error("queue cancel error:", err);
+        res.status(500).json({ success: false });
+    }
+});
 app.post("/api/product/consume", async (req, res) => {
     const { productId } = req.body;
 
