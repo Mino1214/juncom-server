@@ -952,12 +952,15 @@ router.post('/queue/init', async (req, res) => {
     try {
         const { productId } = req.body;
 
-        const jobId = uuid(); // 🔥 브라우저별 ID
+        const jobId = uuid();
 
-        // 기다리는 queue list 따로 운영
-        // queue:list:3   (productId별)
+        // 1) 큐 push
         await redis.rpush(`queue:list:${productId}`, jobId);
 
+        // 2) 🔥 jobId → productId 매핑 (필수)
+        await redis.set(`queue:map:${jobId}`, productId);
+
+        // 3) 현재 대기 번호 계산
         const waiting = await redis.llen(`queue:list:${productId}`);
 
         res.json({
@@ -965,7 +968,6 @@ router.post('/queue/init', async (req, res) => {
             jobId,
             position: waiting
         });
-
 
     } catch (e) {
         console.error(e);
@@ -977,8 +979,14 @@ router.get('/queue/status/:jobId', async (req, res) => {
     try {
         const { jobId } = req.params;
 
-        // productId 매핑 Store (save at init)
+        // 1️⃣ jobId → productId 매핑 조회
         const productId = await redis.get(`queue:map:${jobId}`);
+
+        if (!productId) {
+            return res.json({ status: 'failed', error: 'productId_not_found' });
+        }
+
+        // 2️⃣ 해당 상품 대기열 조회
         const list = await redis.lRange(`queue:list:${productId}`, 0, -1);
 
         const idx = list.indexOf(jobId);
@@ -987,9 +995,10 @@ router.get('/queue/status/:jobId', async (req, res) => {
             return res.json({ status: 'failed', error: "not_in_queue" });
         }
 
+        // 0번 = 바로 차례
         if (idx === 0) {
             return res.json({
-                status: 'completed', // 차례 됨
+                status: 'completed',
                 result: { ready: true }
             });
         }
@@ -1000,6 +1009,7 @@ router.get('/queue/status/:jobId', async (req, res) => {
         });
 
     } catch (err) {
+        console.error(err);
         res.status(500).json({ success: false });
     }
 });
