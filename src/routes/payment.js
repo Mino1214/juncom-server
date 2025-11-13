@@ -979,17 +979,21 @@ router.get('/queue/status/:jobId', async (req, res) => {
     try {
         const { jobId } = req.params;
 
-        // jobId → productId 조회
+        // 1) jobId -> productId 찾기
         const productId = await redis.get(`queue:map:${jobId}`);
         if (!productId) {
-            return res.json({ status: 'failed', error: 'productId_not_found' });
+            // 🔥 jobId가 queue:map 에 없다는 건 이미 처리되었다는 뜻 → READY
+            return res.json({
+                status: 'ready',
+                message: 'jobId not found in map → treat as ready'
+            });
         }
 
         const listKey = `queue:list:${productId}`;
         const list = await redis.lRange(listKey, 0, -1);
         const idx = list.indexOf(jobId);
 
-        // 🔥🔥 여기! jobId가 큐에서 빠져 있으면 = 이미 LPOP됨 = 내 차례
+        // 2) 🔥 jobId가 리스트에 없으면 = LPOP 됨 = 내 차례
         if (idx === -1) {
             const redisStock = await redis.get(`product:${productId}:stock`);
             const stock = parseInt(redisStock || "0", 10);
@@ -997,7 +1001,7 @@ router.get('/queue/status/:jobId', async (req, res) => {
             if (stock > 0) {
                 return res.json({
                     status: 'ready',
-                    message: 'LPOP된 상태 - 내 차례'
+                    message: 'LPOP removed → my turn'
                 });
             } else {
                 return res.json({
@@ -1007,11 +1011,11 @@ router.get('/queue/status/:jobId', async (req, res) => {
             }
         }
 
-        // 재고 조회
+        // 3) 재고 조회
         const redisStock = await redis.get(`product:${productId}:stock`);
         const stock = parseInt(redisStock || "0", 10);
 
-        // 1번 순서 + 재고 있음 → ready
+        // 4) idx 0 이고 재고 있으면 ready
         if (idx === 0 && stock > 0) {
             return res.json({
                 status: 'ready',
@@ -1019,7 +1023,7 @@ router.get('/queue/status/:jobId', async (req, res) => {
             });
         }
 
-        // 대기 상태
+        // 5) 아직 대기중
         return res.json({
             status: 'waiting',
             position: idx + 1
@@ -1027,7 +1031,7 @@ router.get('/queue/status/:jobId', async (req, res) => {
 
     } catch (err) {
         console.error(err);
-        res.status(500).json({ success: false });
+        return res.status(500).json({ success: false });
     }
 });
 export default router;
