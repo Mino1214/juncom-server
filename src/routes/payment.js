@@ -979,19 +979,17 @@ router.get('/queue/status/:jobId', async (req, res) => {
     try {
         const { jobId } = req.params;
 
-        // 1) jobId -> productId 조회
+        // jobId → productId 조회
         const productId = await redis.get(`queue:map:${jobId}`);
         if (!productId) {
             return res.json({ status: 'failed', error: 'productId_not_found' });
         }
 
-        // 2) 대기열 가져오기
         const listKey = `queue:list:${productId}`;
         const list = await redis.lRange(listKey, 0, -1);
-
         const idx = list.indexOf(jobId);
 
-        // 🔥🔥 2-1) 큐에서 없어졌으면 → 내 차례임 (= 이미 LPOP 되었음)
+        // 🔥🔥 여기! jobId가 큐에서 빠져 있으면 = 이미 LPOP됨 = 내 차례
         if (idx === -1) {
             const redisStock = await redis.get(`product:${productId}:stock`);
             const stock = parseInt(redisStock || "0", 10);
@@ -999,7 +997,7 @@ router.get('/queue/status/:jobId', async (req, res) => {
             if (stock > 0) {
                 return res.json({
                     status: 'ready',
-                    message: '구매 가능 (queue popped)'
+                    message: 'LPOP된 상태 - 내 차례'
                 });
             } else {
                 return res.json({
@@ -1009,11 +1007,11 @@ router.get('/queue/status/:jobId', async (req, res) => {
             }
         }
 
-        // 3) 재고 확인
+        // 재고 조회
         const redisStock = await redis.get(`product:${productId}:stock`);
         const stock = parseInt(redisStock || "0", 10);
 
-        // 4) 순번이 1위 + 재고 있음 → ready
+        // 1번 순서 + 재고 있음 → ready
         if (idx === 0 && stock > 0) {
             return res.json({
                 status: 'ready',
@@ -1021,7 +1019,7 @@ router.get('/queue/status/:jobId', async (req, res) => {
             });
         }
 
-        // 5) 대기 중
+        // 대기 상태
         return res.json({
             status: 'waiting',
             position: idx + 1
