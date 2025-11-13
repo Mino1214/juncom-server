@@ -751,7 +751,7 @@ app.get("/api/payment/order/check/:email", async (req, res) => {
             LIMIT 1;
         `;
 
-        const result = await client.query(query, [employeeId]);
+        const result = await client.query(query, [email]);
 
         console.log("🟢 조회 결과:", result.rows);
 
