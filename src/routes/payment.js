@@ -927,7 +927,7 @@ router.post('/queue/init', async (req, res) => {
         // queue:list:3   (productId별)
         await redis.rpush(`queue:list:${productId}`, jobId);
 
-        const waiting = await redis.lLen(`queue:list:${productId}`);
+        const waiting = await redis.llen(`queue:list:${productId}`);
 
         res.json({
             success: true,
