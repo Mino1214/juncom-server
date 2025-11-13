@@ -1931,17 +1931,41 @@ app.post("/api/product/consume", async (req, res) => {
     return res.json({ success: true });
 });
 app.post("/api/product/restore", async (req, res) => {
-    const { productId } = req.body;
+    try {
+        const { productId } = req.body;
 
-    await redis.incr(`product:${productId}:stock`);
-    await client.query(
-        "UPDATE products SET stock = stock + 1 WHERE id = $1",
-        [productId]
-    );
+        if (!productId) {
+            return res.json({ success: false, message: "productId 없음" });
+        }
 
-    res.json({ success: true });
+        const redisKey = `product:${productId}:stock`;
+
+        // 1️⃣ DB 재고 복원
+        const client = await pool.connect();
+        await client.query(
+            "UPDATE products SET stock = stock + 1 WHERE id = $1",
+            [productId]
+        );
+        client.release();
+
+        // 2️⃣ Redis 캐시 다시 채우기 (DB 최신값 반영)
+        const updated = await pool.query(
+            "SELECT stock FROM products WHERE id = $1",
+            [productId]
+        );
+
+        const newStock = updated.rows[0]?.stock;
+
+        // Redis 재설정
+        await redis.set(redisKey, newStock);
+
+        res.json({ success: true, stock: newStock });
+
+    } catch (err) {
+        console.error("restore error:", err);
+        res.status(500).json({ success: false });
+    }
 });
-
 app.get("/api/product/:productId/stock", async (req, res) => {
     const { productId } = req.params;
 
