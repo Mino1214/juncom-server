@@ -412,6 +412,7 @@ app.patch("/api/admin/employee/status/:id", verifyToken, requireRole("admin"), a
 // 5. 사원 정보 삭제
 // 회원 탈퇴
 // 회원 탈퇴
+// 회원 탈퇴
 app.delete("/api/user/:employeeId", verifyToken, async (req, res) => {
     const client = await pool.connect();
 
@@ -420,7 +421,7 @@ app.delete("/api/user/:employeeId", verifyToken, async (req, res) => {
 
         await client.query('BEGIN');
 
-        // 1️⃣ 유저 정보 조회 (email 확보용)
+        // 1️⃣ 탈퇴할 유저 정보를 먼저 가져와서 email 확보
         const userCheck = await client.query(
             'SELECT * FROM users WHERE employee_id = $1',
             [employeeId]
@@ -434,14 +435,15 @@ app.delete("/api/user/:employeeId", verifyToken, async (req, res) => {
         }
 
         const user = userCheck.rows[0];
-        const email = user.email;    // 🔥 캐시 키에 필요한 진짜 email
+        const email = user.email;  // ⭐ 캐시 삭제에 반드시 필요한 key
 
-        // 2️⃣ Redis 캐시 삭제 (이메일 기준)
+        // 2️⃣ Redis 캐시 삭제 (email 기반)
         if (email) {
-            await invalidateUserCache(email);
+            await invalidateUserCache(email); 
+            // → 실제 삭제되는 key: user:email@example.com
         }
 
-        // 3️⃣ DB 삭제
+        // 3️⃣ DB에서 사용자 삭제
         await client.query(
             'DELETE FROM users WHERE employee_id = $1',
             [employeeId]
@@ -449,20 +451,21 @@ app.delete("/api/user/:employeeId", verifyToken, async (req, res) => {
 
         await client.query('COMMIT');
 
-        res.json({
+        return res.json({
             message: "회원 탈퇴가 완료되었습니다."
         });
 
     } catch (error) {
         await client.query('ROLLBACK');
         console.error("Delete user error:", error);
-        res.status(500).json({
+        return res.status(500).json({
             message: "회원 탈퇴 처리 중 오류가 발생했습니다."
         });
     } finally {
         client.release();
     }
 });
+
 
 
 app.post("/api/send-verification", async (req, res) => {
