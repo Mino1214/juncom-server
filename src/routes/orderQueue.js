@@ -94,6 +94,65 @@ const worker = new Worker(
     },
     { connection }
 );
+// ✅ NEW: 자동 취소 워커
+const cancelWorker = new Worker(
+    "orderInitQueue",
+    async (job) => {
+        if (job.name !== "autoCancelOrder") return;
+
+        const { orderId } = job.data;
+        const client = await pool.connect();
+
+        try {
+            console.log(`⏳ 자동취소 검사 시작: ${orderId}`);
+
+            await client.query("BEGIN");
+
+            // 1️⃣ 주문 상태 확인
+            const { rows } = await client.query(
+                "SELECT product_id, payment_status FROM orders WHERE order_id = $1 FOR UPDATE",
+                [orderId]
+            );
+
+            if (rows.length === 0) {
+                console.warn(`⚠️ 주문 ${orderId} 없음`);
+                await client.query("ROLLBACK");
+                return;
+            }
+
+            const { product_id, payment_status } = rows[0];
+
+            // 2️⃣ 이미 결제된 주문인지 확인
+            if (payment_status !== "pending") {
+                console.log(`✅ 주문 ${orderId} 이미 결제 완료 또는 취소됨 (${payment_status})`);
+                await client.query("ROLLBACK");
+                return;
+            }
+
+            // 3️⃣ 주문 상태 → 취소
+            await client.query(
+                "UPDATE orders SET payment_status = 'canceled', canceled_at = NOW() WHERE order_id = $1",
+                [orderId]
+            );
+
+            // 4️⃣ 🔥 재고 원복 (핵심 추가 로직)
+            await client.query(
+                "UPDATE products SET stock = stock + 1 WHERE id = $1",
+                [product_id]
+            );
+
+            await client.query("COMMIT");
+
+            console.log(`🚫 주문 ${orderId} 자동취소 + 재고 원복 완료`);
+        } catch (err) {
+            await client.query("ROLLBACK");
+            console.error(`💥 자동취소 처리 오류(${orderId}):`, err.message);
+        } finally {
+            client.release();
+        }
+    },
+    { connection }
+);
 
 // ✅ 로그
 worker.on("completed", (job, result) => {
