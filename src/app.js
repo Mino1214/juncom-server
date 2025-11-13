@@ -1872,6 +1872,60 @@ app.get("/api/orders/:orderId", verifyToken, async (req, res) => {
     }
 });
 
+
+//
+app.post("/api/product/consume", async (req, res) => {
+    const { productId } = req.body;
+
+    try {
+        const key = `product:${productId}:stock`;
+        const stock = await redis.decr(key);
+
+        if (stock < 0) {
+            // 재고 부족 → 다시 롤백
+            await redis.incr(key);
+            return res.json({ success: false, message: "재고 없음" });
+        }
+
+        return res.json({ success: true });
+
+    } catch (err) {
+        console.error("consume error:", err);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.post("/api/product/restore", async (req, res) => {
+    const { productId } = req.body;
+
+    try {
+        await redis.incr(`product:${productId}:stock`);
+        res.json({ success: true });
+    } catch (err) {
+        console.error("restore error:", err);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.get("/api/product/:productId/stock", async (req, res) => {
+    const { productId } = req.params;
+
+    try {
+        const key = `product:${productId}:stock`;
+        const stock = await redis.get(key);
+
+        if (stock === null) {
+            return res.json({ success: false, stock: null, message: "재고 정보 없음" });
+        }
+
+        return res.json({ success: true, stock: Number(stock) });
+    } catch (err) {
+        console.error("stock 조회 에러:", err);
+        res.status(500).json({ success: false });
+    }
+});
+
+
 // 📍 현재 실행 파일 기준 절대경로 계산
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1909,7 +1963,17 @@ app.post("/api/payment/results", (req, res) => {
     </html>
   `);
 });
-
+async function syncProductStockToRedis() {
+    try {
+        const { rows } = await pool.query("SELECT id, stock FROM products");
+        for (const p of rows) {
+            await redis.set(`product:${p.id}:stock`, p.stock);
+        }
+        console.log("🔄 Redis 재고 초기화 완료");
+    } catch (err) {
+        console.error("❌ Redis 재고 초기화 실패:", err);
+    }
+}
 const PORT = 5000;
 app.listen(PORT, async () => {
     console.log(`\n🚀 Server running at http://localhost:${PORT}\n`);
@@ -1954,4 +2018,6 @@ app.listen(PORT, async () => {
     console.log(`   POST /api/dev/init-db - DB 테이블 생성`);
     console.log(`   POST /api/dev/create-test-user - 테스트 사용자 생성`);
     console.log(`   POST /api/dev/clear-cache - Redis 캐시 초기화`);
+
+    await syncProductStockToRedis();
 });
