@@ -36,7 +36,19 @@ const worker = new Worker(
         try {
             const { productId, employeeId, userName, userEmail, userPhone } = job.data;
 
-            console.log(`🧾 주문 생성 요청: productId=${productId}, employeeId=${employeeId}`);
+            // 🔥 필수 데이터 검증 추가
+            if (!productId) {
+                throw new Error("productId가 필요합니다.");
+            }
+            if (!userEmail) {
+                throw new Error("userEmail이 필요합니다.");
+            }
+
+            const safeEmployeeId = employeeId || "GUEST"; // 🔥 "SYSTEM" → "GUEST"
+            const safeUserName = userName || "미입력";
+            const safeUserPhone = userPhone || null;
+
+            console.log(`🧾 주문 생성 요청: productId=${productId}, employeeId=${safeEmployeeId}, email=${userEmail}`);
 
             await client.query("BEGIN");
 
@@ -73,10 +85,10 @@ const worker = new Worker(
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $8, NOW())`,
                 [
                     orderId,
-                    employeeId || "SYSTEM",
-                    userName || "미입력",
-                    userEmail || null,
-                    userPhone || null,
+                    safeEmployeeId,
+                    safeUserName,
+                    userEmail,
+                    safeUserPhone,
                     product.id,
                     product.name,
                     product.price,
@@ -85,19 +97,23 @@ const worker = new Worker(
 
             await client.query("COMMIT");
 
-            console.log(`✅ 주문 생성 완료: ${orderId}`);
+            console.log(`✅ 주문 생성 완료: ${orderId} (사용자: ${userEmail})`);
 
             // 5️⃣ 자동취소 Job 예약 (5분 뒤)
             await orderQueue.add(
                 "autoCancelOrder",
-                { orderId, employeeId, productId: product.id },
-                { delay: 5 * 60 * 1000 }
+                {
+                    orderId,
+                    productId: product.id,
+                    userEmail // 🔥 추가: 로깅용
+                },
+                { delay: 1 * 60 * 1000 }
             );
 
             return { orderId };
         } catch (err) {
             await client.query("ROLLBACK");
-            console.error("❌ 주문 생성 실패:", err);
+            console.error("❌ 주문 생성 실패:", err.message);
             throw err;
         } finally {
             client.release();
@@ -106,18 +122,18 @@ const worker = new Worker(
     { connection }
 );
 
-// ✅ 자동 취소 워커 (같은 큐 사용)
+// ✅ 자동 취소 워커
 const cancelWorker = new Worker(
-    "orderInitQueue",  // 🔥 수정: orderInitQueue로 변경
+    "orderInitQueue",
     async (job) => {
         // 🔥 autoCancelOrder job만 처리
         if (job.name !== "autoCancelOrder") return;
 
-        const { orderId, productId } = job.data;
+        const { orderId, productId, userEmail } = job.data; // 🔥 userEmail 추가
         const client = await pool.connect();
 
         try {
-            console.log(`⏳ 자동취소 검사 시작: ${orderId}`);
+            console.log(`⏳ 자동취소 검사 시작: ${orderId} (사용자: ${userEmail})`);
 
             await client.query("BEGIN");
 
@@ -156,7 +172,7 @@ const cancelWorker = new Worker(
 
             await client.query("COMMIT");
 
-            console.log(`🚫 주문 ${orderId} 자동취소 + 재고 원복 완료`);
+            console.log(`🚫 주문 ${orderId} 자동취소 + 재고 원복 완료 (사용자: ${userEmail})`);
         } catch (err) {
             await client.query("ROLLBACK");
             console.error(`💥 자동취소 처리 오류(${orderId}):`, err.message);
@@ -170,16 +186,16 @@ const cancelWorker = new Worker(
 // ✅ 로그
 worker.on("completed", (job, result) => {
     if (job.name !== "autoCancelOrder") {
-        console.log(`✅ 주문 생성 완료: ${job.id} → ${result?.orderId}`);
+        console.log(`✅ 주문 생성 Job 완료: ${job.id} → ${result?.orderId}`);
     }
 });
 worker.on("failed", (job, err) => {
-    console.error(`💥 Job 실패: ${job.id} (${err.message})`);
+    console.error(`💥 Job 실패: ${job.id} - ${err.message}`);
 });
 
 cancelWorker.on("completed", (job) => {
     console.log(`🕒 자동취소 Job 완료: ${job.id}`);
 });
 cancelWorker.on("failed", (job, err) => {
-    console.error(`💥 자동취소 Job 실패: ${job.id} (${err.message})`);
+    console.error(`💥 자동취소 Job 실패: ${job.id} - ${err.message}`);
 });
