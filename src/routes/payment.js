@@ -979,30 +979,33 @@ router.get('/queue/status/:jobId', async (req, res) => {
     try {
         const { jobId } = req.params;
 
-        // 1️⃣ jobId → productId 매핑 조회
+        // 1) jobId -> productId 조회
         const productId = await redis.get(`queue:map:${jobId}`);
-
         if (!productId) {
             return res.json({ status: 'failed', error: 'productId_not_found' });
         }
 
-        // 2️⃣ 해당 상품 대기열 조회
+        // 2) 대기열 조회
         const list = await redis.lRange(`queue:list:${productId}`, 0, -1);
-
         const idx = list.indexOf(jobId);
 
         if (idx === -1) {
-            return res.json({ status: 'failed', error: "not_in_queue" });
+            return res.json({ status: 'failed', error: 'not_in_queue' });
         }
 
-        // 0번 = 바로 차례
-        if (idx === 0) {
+        // 3) 재고 조회
+        const redisStock = await redis.get(`product:${productId}:stock`);
+        const stock = parseInt(redisStock || "0", 10);
+
+        // 4) 내 차례 + 재고 있음 → 자동 구매 가능
+        if (idx === 0 && stock > 0) {
             return res.json({
-                status: 'completed',
-                result: { ready: true }
+                status: 'ready',
+                message: '구매 가능',
             });
         }
 
+        // 5) 아직 대기 중
         return res.json({
             status: 'waiting',
             position: idx + 1
