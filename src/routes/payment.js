@@ -990,7 +990,7 @@ router.get('/queue/status/:jobId', async (req, res) => {
         }
 
         const listKey = `queue:list:${productId}`;
-        const list = await redis.lRange(listKey, 0, -1);
+        const list = await redis.lrange(listKey, 0, -1);
         const idx = list.indexOf(jobId);
 
         // 2) 🔥 jobId가 리스트에 없으면 = LPOP 됨 = 내 차례
