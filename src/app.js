@@ -410,39 +410,65 @@ app.patch("/api/admin/employee/status/:id", verifyToken, requireRole("admin"), a
 });
 
 // 5. 사원 정보 삭제
-app.delete("/api/admin/employee/status/:id", verifyToken, requireRole("admin"), async (req, res) => {
+// 회원 탈퇴
+app.delete("/api/user/:employeeId", verifyToken, async (req, res) => {
     const client = await pool.connect();
 
     try {
-        const { id } = req.params;
+        const { employeeId } = req.params;
 
-        const result = await client.query(
-            'DELETE FROM employee_status WHERE id = $1 RETURNING *',
-            [id]
+        await client.query('BEGIN');
+
+        // 1️⃣ 사용자 조회
+        const userCheck = await client.query(
+            'SELECT * FROM users WHERE employee_id = $1',
+            [employeeId]
         );
 
-        if (result.rows.length === 0) {
+        if (userCheck.rows.length === 0) {
+            await client.query('ROLLBACK');
             return res.status(404).json({
-                success: false,
-                message: '해당 사원 정보를 찾을 수 없습니다.'
+                message: "사용자를 찾을 수 없습니다."
             });
         }
 
-        res.status(200).json({
-            success: true,
-            message: '사원 정보가 삭제되었습니다.'
+        const user = userCheck.rows[0];
+        const userEmail = user.email;        // email 가져오기 (캐시 삭제용)
+        const userKakaoId = user.kakao_id;   // 카카오 매핑 삭제용
+
+        // 2️⃣ Redis 캐시 삭제 (이메일 기반)
+        if (userEmail) {
+            await invalidateUserCache(userEmail);
+        }
+
+        // 3️⃣ kakao 매핑 제거
+        if (userKakaoId) {
+            await redis.del(`kakao:${userKakaoId}`);
+        }
+
+        // 4️⃣ DB에서 사용자 삭제
+        await client.query(
+            'DELETE FROM users WHERE employee_id = $1',
+            [employeeId]
+        );
+
+        await client.query('COMMIT');
+
+        return res.json({
+            message: "회원 탈퇴가 완료되었습니다."
         });
 
     } catch (error) {
-        console.error('사원 정보 삭제 오류:', error);
-        res.status(500).json({
-            success: false,
-            message: '서버 오류가 발생했습니다.'
+        await client.query('ROLLBACK');
+        console.error("Delete user error:", error);
+        return res.status(500).json({
+            message: "회원 탈퇴 처리 중 오류가 발생했습니다."
         });
     } finally {
         client.release();
     }
 });
+
 app.post("/api/send-verification", async (req, res) => {
     console.log("✅ HANDLER CALLED!!!");
     let client;
