@@ -746,7 +746,7 @@ app.get("/api/payment/order/check/:email", async (req, res) => {
         const query = `
             SELECT id, employee_id, payment_status
             FROM orders
-            WHERE email = $1
+            WHERE user_email = $1
               AND (payment_status IS NULL OR payment_status != 'cancelled')
             LIMIT 1;
         `;
