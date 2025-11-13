@@ -36,7 +36,7 @@ const worker = new Worker(
         try {
             const { productId, employeeId, userName, userEmail, userPhone } = job.data;
 
-            // 🔥 필수 데이터 검증 추가
+            // 🔥 필수 데이터 검증
             if (!productId) {
                 throw new Error("productId가 필요합니다.");
             }
@@ -44,9 +44,10 @@ const worker = new Worker(
                 throw new Error("userEmail이 필요합니다.");
             }
 
-            const safeEmployeeId = employeeId || "GUEST"; // 🔥 "SYSTEM" → "GUEST"
-            const safeUserName = userName || "미입력";
-            const safeUserPhone = userPhone || null;
+            // 🔥 안전한 기본값 처리
+            const safeEmployeeId = employeeId && employeeId.trim() !== "" ? employeeId : "GUEST";
+            const safeUserName = userName && userName.trim() !== "" ? userName : "미입력";
+            const safeUserPhone = userPhone && userPhone.trim() !== "" ? userPhone : null;
 
             console.log(`🧾 주문 생성 요청: productId=${productId}, employeeId=${safeEmployeeId}, email=${userEmail}`);
 
@@ -97,15 +98,15 @@ const worker = new Worker(
 
             await client.query("COMMIT");
 
-            console.log(`✅ 주문 생성 완료: ${orderId} (사용자: ${userEmail})`);
+            console.log(`✅ 주문 생성 완료: ${orderId} (사용자: ${userEmail}, employeeId: ${safeEmployeeId})`);
 
-            // 5️⃣ 자동취소 Job 예약 (5분 뒤)
+            // 5️⃣ 자동취소 Job 예약 (1분 뒤)
             await orderQueue.add(
                 "autoCancelOrder",
                 {
                     orderId,
                     productId: product.id,
-                    userEmail // 🔥 추가: 로깅용
+                    userEmail
                 },
                 { delay: 1 * 60 * 1000 }
             );
@@ -129,11 +130,11 @@ const cancelWorker = new Worker(
         // 🔥 autoCancelOrder job만 처리
         if (job.name !== "autoCancelOrder") return;
 
-        const { orderId, productId, userEmail } = job.data; // 🔥 userEmail 추가
+        const { orderId, productId, userEmail } = job.data;
         const client = await pool.connect();
 
         try {
-            console.log(`⏳ 자동취소 검사 시작: ${orderId} (사용자: ${userEmail})`);
+            console.log(`⏳ 자동취소 검사 시작: ${orderId} (사용자: ${userEmail || "알 수 없음"})`);
 
             await client.query("BEGIN");
 
@@ -172,7 +173,7 @@ const cancelWorker = new Worker(
 
             await client.query("COMMIT");
 
-            console.log(`🚫 주문 ${orderId} 자동취소 + 재고 원복 완료 (사용자: ${userEmail})`);
+            console.log(`🚫 주문 ${orderId} 자동취소 + 재고 원복 완료 (사용자: ${userEmail || "알 수 없음"})`);
         } catch (err) {
             await client.query("ROLLBACK");
             console.error(`💥 자동취소 처리 오류(${orderId}):`, err.message);
