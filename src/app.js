@@ -740,7 +740,7 @@ app.get("/api/payment/order/check/:email", async (req, res) => {
     const client = await pool.connect();
 
     try {
-        console.log("🔍 주문 확인 요청:", employeeId);
+        console.log("🔍 주문 확인 요청:", email);
 
         // ✅ 1. 테이블 구조에 맞게 컬럼명 정확히
         const query = `
