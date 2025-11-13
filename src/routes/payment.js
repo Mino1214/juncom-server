@@ -739,11 +739,11 @@ router.post('/queue/init', async (req, res) => {
             userPhone,
         });
         // 🔥 주문 생성 후 5분 뒤 자동취소 job 생성
-        await orderQueue.add(
-            "autoCancelOrder",
-            { orderId: null, employeeId },
-            { delay: 1 * 60 * 1000 }
-        );
+        // await orderQueue.add(
+        //     "autoCancelOrder",
+        //     { orderId: null, employeeId },
+        //     { delay: 1 * 60 * 1000 }
+        // );
 
 
         const waitingCount = await redis.llen('bull:orderInitQueue:wait');

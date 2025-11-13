@@ -56,18 +56,18 @@ const worker = new Worker(
             // 4️⃣ 주문 생성
             await client.query(
                 `INSERT INTO orders (
-            order_id,
-            employee_id,
-            user_name,
-            user_email,
-            user_phone,
-            product_id,
-            product_name,
-            product_price,
-            payment_status,
-            total_amount,
-            created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $8, NOW())`,
+                    order_id,
+                    employee_id,
+                    user_name,
+                    user_email,
+                    user_phone,
+                    product_id,
+                    product_name,
+                    product_price,
+                    payment_status,
+                    total_amount,
+                    created_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $8, NOW())`,
                 [
                     orderId,
                     employeeId || "SYSTEM",
@@ -83,6 +83,14 @@ const worker = new Worker(
             await client.query("COMMIT");
 
             console.log(`✅ 주문 생성 완료: ${orderId}`);
+
+            // ⭐ 5️⃣ 주문 생성 직후 자동취소 Job 예약 (여기 추가)
+            await orderQueue.add(
+                "autoCancelOrder",
+                { orderId, employeeId },
+                { delay: 5 * 60 * 1000 } // 5분 뒤 자동취소
+            );
+
             return { orderId };
         } catch (err) {
             await client.query("ROLLBACK");
@@ -94,6 +102,7 @@ const worker = new Worker(
     },
     { connection }
 );
+
 // ✅ NEW: 자동 취소 워커
 const cancelWorker = new Worker(
     "orderCancelQueue",
