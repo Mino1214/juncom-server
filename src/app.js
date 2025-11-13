@@ -467,33 +467,8 @@ app.patch("/api/admin/employee/status/:id", verifyToken, requireRole("admin"), a
 //     }
 // });
 
-        const result = await client.query(
-            'DELETE FROM employee_status WHERE id = $1 RETURNING *',
-            [id]
-        );
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: '해당 사원 정보를 찾을 수 없습니다.'
-            });
-        }
 
-        res.status(200).json({
-            success: true,
-            message: '사원 정보가 삭제되었습니다.'
-        });
-
-    } catch (error) {
-        console.error('사원 정보 삭제 오류:', error);
-        res.status(500).json({
-            success: false,
-            message: '서버 오류가 발생했습니다.'
-        });
-    } finally {
-        client.release();
-    }
-});
 app.post("/api/send-verification", async (req, res) => {
     console.log("✅ HANDLER CALLED!!!");
     let client;
@@ -1151,7 +1126,7 @@ app.post("/api/auth/signup", async (req, res) => {
         }
 
         // 4. 사용자 정보 캐싱 (Redis)
-      await setUserCache(newUser.email, newUser);
+        await setUserCache(newUser.email, newUser);
 
         // 트랜잭션 커밋
         await client.query('COMMIT');
@@ -1823,7 +1798,8 @@ app.put(
 // ============================================
 
 // 주문 목록 조회 (MyPage용)
-app.get("/api/orders", verifyToken, async (req, res) => {
+// 🔥 경로 수정: 쿼리 파라미터 방식
+app.get("/api/myorder", verifyToken, async (req, res) => {
     const client = await pool.connect();
     try {
         // ✅ req.query 사용
@@ -1924,41 +1900,53 @@ app.get("/api/orders/:orderId", verifyToken, async (req, res) => {
     }
 });
 
+// 📍 현재 실행 파일 기준 절대경로 계산
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-//
+// 📁 uploads 폴더 절대경로 지정
+const uploadsPath = path.join(__dirname, "uploads");
+
+// 기존 라인 교체
+// app.use("/api/uploads", express.static("uploads"));
+app.use("/api/uploads", express.static(uploadsPath));
 app.post("/api/product/consume", async (req, res) => {
     const { productId } = req.body;
 
     try {
         const key = `product:${productId}:stock`;
+
+        // 재고 감소
         const stock = await redis.decr(key);
 
+        // 감소된 결과가 음수 → 재고 없는 상태 → 롤백
         if (stock < 0) {
-            // 재고 부족 → 다시 롤백
-            await redis.incr(key);
+            await redis.incr(key); // 롤백
             return res.json({ success: false, message: "재고 없음" });
         }
 
-        return res.json({ success: true });
+        // 정상 차감
+        return res.json({ success: true, remaining: stock });
 
     } catch (err) {
-        console.error("consume error:", err);
+        console.error("❌ consume error:", err);
         res.status(500).json({ success: false });
     }
 });
-
 app.post("/api/product/restore", async (req, res) => {
     const { productId } = req.body;
 
     try {
-        await redis.incr(`product:${productId}:stock`);
-        res.json({ success: true });
+        const key = `product:${productId}:stock`;
+        const result = await redis.incr(key);
+
+        return res.json({ success: true, newStock: result });
+
     } catch (err) {
-        console.error("restore error:", err);
+        console.error("❌ restore error:", err);
         res.status(500).json({ success: false });
     }
 });
-
 app.get("/api/product/:productId/stock", async (req, res) => {
     const { productId } = req.params;
 
@@ -1976,19 +1964,6 @@ app.get("/api/product/:productId/stock", async (req, res) => {
         res.status(500).json({ success: false });
     }
 });
-
-
-// 📍 현재 실행 파일 기준 절대경로 계산
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// 📁 uploads 폴더 절대경로 지정
-const uploadsPath = path.join(__dirname, "uploads");
-
-// 기존 라인 교체
-// app.use("/api/uploads", express.static("uploads"));
-app.use("/api/uploads", express.static(uploadsPath));
-
 // ✅ NICEPAY 리턴 처리용 라우트
 app.post("/api/payment/results", (req, res) => {
     // 결제 결과를 서버에서 필요 시 로그하거나 DB 기록 가능
@@ -2070,6 +2045,5 @@ app.listen(PORT, async () => {
     console.log(`   POST /api/dev/init-db - DB 테이블 생성`);
     console.log(`   POST /api/dev/create-test-user - 테스트 사용자 생성`);
     console.log(`   POST /api/dev/clear-cache - Redis 캐시 초기화`);
-
     await syncProductStockToRedis();
 });
