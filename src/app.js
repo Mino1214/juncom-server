@@ -735,8 +735,8 @@ app.get("/api/users", async (req, res) => {
     }
 });
 // 주문 존재 여부 확인
-app.get("/api/payment/order/check/:employeeId", async (req, res) => {
-    const { employeeId } = req.params;
+app.get("/api/payment/order/check/:email", async (req, res) => {
+    const { email } = req.params;
     const client = await pool.connect();
 
     try {
@@ -746,7 +746,7 @@ app.get("/api/payment/order/check/:employeeId", async (req, res) => {
         const query = `
             SELECT id, employee_id, payment_status
             FROM orders
-            WHERE employee_id = $1
+            WHERE email = $1
               AND (payment_status IS NULL OR payment_status != 'cancelled')
             LIMIT 1;
         `;
