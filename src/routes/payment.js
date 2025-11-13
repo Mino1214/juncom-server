@@ -735,7 +735,7 @@ router.post("/product/:productId/quick-purchase", async (req, res) => {
 
         const stockKey = `product:${productId}:stock`;
 
-        // 🔹 Redis 재고 차감
+        // 🔥 Redis 재고 차감
         const stock = await redis.decr(stockKey);
 
         if (stock < 0) {
@@ -747,23 +747,25 @@ router.post("/product/:productId/quick-purchase", async (req, res) => {
             });
         }
 
-        // 🔥 재고 있음 → 바로 주문 생성
+        // 🔍 DB에서 상품 조회 (필수)
+        const productResult = await pool.query(
+            "SELECT name, price, stock FROM products WHERE id = $1",
+            [productId]
+        );
+
+        const product = productResult.rows[0];
+
+        if (!product) {
+            throw new Error("상품을 찾을 수 없습니다.");
+        }
+
+        const { name: productName, price } = product;
+
+        // 🔥 주문 ID 생성
         const orderId = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
         const client = await pool.connect();
         await client.query("BEGIN");
-
-        // 📌 0) 제품 정보 조회 (product_name, price 가져오기)
-        const productInfo = await client.query(
-            "SELECT name, price FROM products WHERE id = $1",
-            [productId]
-        );
-
-        if (productInfo.rows.length === 0) {
-            throw new Error("상품 정보 없음");
-        }
-
-        const { name: productName, price } = productInfo.rows[0];
 
         // 🔥 1️⃣ DB 재고 차감
         await client.query(
@@ -771,14 +773,26 @@ router.post("/product/:productId/quick-purchase", async (req, res) => {
             [productId]
         );
 
-        // 🔥 2️⃣ 주문 생성 (product_name + price 포함)
+        // 🔥 2️⃣ 주문 INSERT
         await client.query(`
             INSERT INTO orders (
-                order_id, employee_id, user_name, user_email, user_phone,
-                product_id, product_name, price,
-                payment_status, created_at
+                order_id,
+                employee_id,
+                user_name,
+                user_email,
+                user_phone,
+                product_id,
+                product_name,
+                price,
+                stock_snapshot,
+                payment_status,
+                created_at
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',NOW())
+            VALUES (
+                       $1, $2, $3, $4, $5,
+                       $6, $7, $8, $9,
+                       'pending', NOW()
+                   )
         `, [
             orderId,
             employeeId || 'GUEST',
@@ -787,13 +801,14 @@ router.post("/product/:productId/quick-purchase", async (req, res) => {
             userPhone,
             productId,
             productName,
-            price
+            price,
+            stock  // 주문 당시 재고 스냅샷
         ]);
 
         await client.query("COMMIT");
         client.release();
 
-        // 🔥 Redis 캐시 초기화
+        // Redis 재고 캐시 삭제 → 다음 조회 시 DB 기준 다시 세팅
         await redis.del(stockKey);
 
         return res.json({
