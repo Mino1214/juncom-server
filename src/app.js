@@ -785,8 +785,8 @@ app.get("/count", async (req, res) => {
 // ============================================
 
 // Redis 캐시에서 사용자 조회
-async function getUserFromCache(employeeId) {
-    const cacheKey = `user:${employeeId}`;
+async function getUserFromCache(email) {
+    const cacheKey = `user:${email}`;
     const cached = await redis.get(cacheKey);
     if (cached) {
         return JSON.parse(cached);
@@ -796,14 +796,14 @@ async function getUserFromCache(employeeId) {
 
 // Redis 캐시에 사용자 저장 (TTL: 1시간)
 // Redis 캐시에 사용자 저장 (TTL: 1시간)
-async function setUserCache(employeeId, userData) {
-    const cacheKey = `user:${employeeId}`;
+async function setUserCache(email, userData) {
+    const cacheKey = `user:${email}`;
     await redis.set(cacheKey, JSON.stringify(userData), 'EX', 3600);
 }
 
 // Redis 캐시 무효화
-async function invalidateUserCache(employeeId) {
-    const cacheKey = `user:${employeeId}`;
+async function invalidateUserCache(email) {
+    const cacheKey = `user:${email}`;
     await redis.del(cacheKey);
 }
 
@@ -893,7 +893,7 @@ app.post("/api/dev/reset-password", async (req, res) => {
         );
 
         // Redis 캐시 무효화
-        await invalidateUserCache(result.rows[0].employee_id);
+        await invalidateUserCache(email);
 
         console.log(`✅ [비밀번호 리셋 완료] ${email} → 새 비번: ${newPassword}`);
 
@@ -1100,7 +1100,7 @@ app.post("/api/auth/signup", async (req, res) => {
         }
 
         // 4. 사용자 정보 캐싱 (Redis)
-        await setUserCache(employeeId, newUser);
+      await setUserCache(newUser.email, newUser);
 
         // 트랜잭션 커밋
         await client.query('COMMIT');
@@ -1476,7 +1476,7 @@ app.delete("/api/user/:employeeId",  verifyToken,async (req, res) => {
         );
 
         // Redis 캐시 삭제
-        await invalidateUserCache(employeeId);
+        await invalidateUserCache(email);
 
         // 카카오 ID 매핑도 삭제
         if (user.kakao_id) {
