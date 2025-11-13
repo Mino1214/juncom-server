@@ -68,7 +68,7 @@ const TOKEN_EXPIRES_IN = "365d"; // 6시간 유효
 function generateToken(user) {
     return jwt.sign(
         {
-            employeeId: user.employee_id,
+            email: user.email,   // ← email만 사용
             role: user.role,
             name: user.name
         },
@@ -76,6 +76,7 @@ function generateToken(user) {
         { expiresIn: TOKEN_EXPIRES_IN }
     );
 }
+
 
 // 토큰 검증 미들웨어
 function verifyToken(req, res, next) {
@@ -410,11 +411,61 @@ app.patch("/api/admin/employee/status/:id", verifyToken, requireRole("admin"), a
 });
 
 // 5. 사원 정보 삭제
-app.delete("/api/admin/employee/status/:id", verifyToken, requireRole("admin"), async (req, res) => {
-    const client = await pool.connect();
-
-    try {
-        const { id } = req.params;
+// 회원 탈퇴
+// 회원 탈퇴
+// 회원 탈퇴
+// app.delete("/api/user/:employeeId", verifyToken, async (req, res) => {
+//     const client = await pool.connect();
+//
+//     try {
+//         const { employeeId } = req.params;
+//
+//         await client.query('BEGIN');
+//
+//         // 1️⃣ 탈퇴할 유저 정보를 먼저 가져와서 email 확보
+//         const userCheck = await client.query(
+//             'SELECT * FROM users WHERE employee_id = $1',
+//             [employeeId]
+//         );
+//
+//         if (userCheck.rows.length === 0) {
+//             await client.query('ROLLBACK');
+//             return res.status(404).json({
+//                 message: "사용자를 찾을 수 없습니다."
+//             });
+//         }
+//
+//         const user = userCheck.rows[0];
+//         const email = user.email;  // ⭐ 캐시 삭제에 반드시 필요한 key
+//
+//         // 2️⃣ Redis 캐시 삭제 (email 기반)
+//         if (email) {
+//             await invalidateUserCache(email);
+//             // → 실제 삭제되는 key: user:email@example.com
+//         }
+//
+//         // 3️⃣ DB에서 사용자 삭제
+//         await client.query(
+//             'DELETE FROM users WHERE employee_id = $1',
+//             [employeeId]
+//         );
+//
+//         await client.query('COMMIT');
+//
+//         return res.json({
+//             message: "회원 탈퇴가 완료되었습니다."
+//         });
+//
+//     } catch (error) {
+//         await client.query('ROLLBACK');
+//         console.error("Delete user error:", error);
+//         return res.status(500).json({
+//             message: "회원 탈퇴 처리 중 오류가 발생했습니다."
+//         });
+//     } finally {
+//         client.release();
+//     }
+// });
 
         const result = await client.query(
             'DELETE FROM employee_status WHERE id = $1 RETURNING *',
@@ -709,23 +760,23 @@ app.get("/api/users", async (req, res) => {
     }
 });
 // 주문 존재 여부 확인
-app.get("/api/payment/order/check/:employeeId", async (req, res) => {
-    const { employeeId } = req.params;
+app.get("/api/payment/order/check/:email", async (req, res) => {
+    const { email } = req.params;
     const client = await pool.connect();
 
     try {
-        console.log("🔍 주문 확인 요청:", employeeId);
+        console.log("🔍 주문 확인 요청:", email);
 
         // ✅ 1. 테이블 구조에 맞게 컬럼명 정확히
         const query = `
             SELECT id, employee_id, payment_status
             FROM orders
-            WHERE employee_id = $1
+            WHERE user_email = $1
               AND (payment_status IS NULL OR payment_status != 'cancelled')
             LIMIT 1;
         `;
 
-        const result = await client.query(query, [employeeId]);
+        const result = await client.query(query, [email]);
 
         console.log("🟢 조회 결과:", result.rows);
 
@@ -785,8 +836,8 @@ app.get("/count", async (req, res) => {
 // ============================================
 
 // Redis 캐시에서 사용자 조회
-async function getUserFromCache(employeeId) {
-    const cacheKey = `user:${employeeId}`;
+async function getUserFromCache(email) {
+    const cacheKey = `user:${email}`;
     const cached = await redis.get(cacheKey);
     if (cached) {
         return JSON.parse(cached);
@@ -796,14 +847,14 @@ async function getUserFromCache(employeeId) {
 
 // Redis 캐시에 사용자 저장 (TTL: 1시간)
 // Redis 캐시에 사용자 저장 (TTL: 1시간)
-async function setUserCache(employeeId, userData) {
-    const cacheKey = `user:${employeeId}`;
+async function setUserCache(email, userData) {
+    const cacheKey = `user:${email}`;
     await redis.set(cacheKey, JSON.stringify(userData), 'EX', 3600);
 }
 
 // Redis 캐시 무효화
-async function invalidateUserCache(employeeId) {
-    const cacheKey = `user:${employeeId}`;
+async function invalidateUserCache(email) {
+    const cacheKey = `user:${email}`;
     await redis.del(cacheKey);
 }
 
@@ -893,7 +944,7 @@ app.post("/api/dev/reset-password", async (req, res) => {
         );
 
         // Redis 캐시 무효화
-        await invalidateUserCache(result.rows[0].employee_id);
+        await invalidateUserCache(email);
 
         console.log(`✅ [비밀번호 리셋 완료] ${email} → 새 비번: ${newPassword}`);
 
@@ -1100,7 +1151,7 @@ app.post("/api/auth/signup", async (req, res) => {
         }
 
         // 4. 사용자 정보 캐싱 (Redis)
-        await setUserCache(employeeId, newUser);
+      await setUserCache(newUser.email, newUser);
 
         // 트랜잭션 커밋
         await client.query('COMMIT');
@@ -1123,69 +1174,59 @@ app.post("/api/auth/signup", async (req, res) => {
 });
 
 // 4. 사용자 정보 조회
-app.get("/api/user/:employeeId",verifyToken, async (req, res) => {
+app.get("/api/user/:email", verifyToken, async (req, res) => {
     const client = await pool.connect();
 
     try {
-        const { employeeId } = req.params;
+        const { email } = req.params;
 
-        // 1. Redis 캐시 확인
-        let user = await getUserFromCache(employeeId);
+        const result = await client.query(
+            'SELECT * FROM users WHERE email = $1',
+            [email]
+        );
 
-        // 2. 캐시에 없으면 DB 조회
-        if (!user) {
-            const result = await client.query(
-                'SELECT * FROM users WHERE employee_id = $1',
-                [employeeId]
-            );
-
-            if (result.rows.length === 0) {
-                return res.status(404).json({
-                    message: "사용자를 찾을 수 없습니다."
-                });
-            }
-
-            user = result.rows[0];
-            await setUserCache(employeeId, user);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
         }
 
-        // 비밀번호는 제외하고 반환
+        const user = result.rows[0];
+        await setUserCache(user.email, user);
+
         const { password, ...userData } = user;
 
         res.json(userData);
 
     } catch (error) {
         console.error("Get user error:", error);
-        res.status(500).json({
-            message: "사용자 정보 조회 중 오류가 발생했습니다."
-        });
+        res.status(500).json({ message: "사용자 정보 조회 오류" });
     } finally {
         client.release();
     }
 });
 
+
+
 // 5. 사용자 정보 수정
-app.put("/api/user/:employeeId",verifyToken, async (req, res) => {
+app.put("/api/user/:email", verifyToken, async (req, res) => {
     const client = await pool.connect();
 
     try {
-        const { employeeId } = req.params;
+        const { email: requestEmail } = req.params;   // ← 받은 email
         const { name, email, phone, address, address_detail } = req.body;
 
         await client.query('BEGIN');
 
-        // DB 업데이트
         const result = await client.query(
-            `UPDATE users 
+            `UPDATE users
              SET name = COALESCE($1, name),
                  email = COALESCE($2, email),
                  phone = COALESCE($3, phone),
                  address = COALESCE($4, address),
                  address_detail = COALESCE($5, address_detail),
                  updated_at = NOW()
-             WHERE employee_id = $6
-             RETURNING *`,
-            [name, email, phone, address, address_detail, employeeId]
+             WHERE email = $6
+                 RETURNING *`,
+            [name, email, phone, address, address_detail, requestEmail]
         );
 
         if (result.rows.length === 0) {
@@ -1195,14 +1236,16 @@ app.put("/api/user/:employeeId",verifyToken, async (req, res) => {
             });
         }
 
-        // Redis 캐시 무효화
-        await invalidateUserCache(employeeId);
+        const updatedUser = result.rows[0];
+
+        // ✔ email 기준 캐시 삭제
+        await invalidateUserCache(updatedUser.email);
 
         await client.query('COMMIT');
 
         res.json({
             message: "사용자 정보가 수정되었습니다.",
-            user: result.rows[0]
+            user: updatedUser
         });
 
     } catch (error) {
@@ -1215,6 +1258,8 @@ app.put("/api/user/:employeeId",verifyToken, async (req, res) => {
         client.release();
     }
 });
+
+
 // ============================================
 // 개발용: DB 초기화 및 테스트 데이터
 // ============================================
@@ -1446,113 +1491,108 @@ app.get("/api/products/:id", verifyToken,  async (req, res) => {
 });
 
 // 회원 탈퇴
-app.delete("/api/user/:employeeId",  verifyToken,async (req, res) => {
+app.delete("/api/user/:email", verifyToken, async (req, res) => {
     const client = await pool.connect();
 
     try {
-        const { employeeId } = req.params;
+        const { email } = req.params;
 
         await client.query('BEGIN');
 
-        // 사용자 존재 확인
+        // 사용자 조회
         const userCheck = await client.query(
-            'SELECT * FROM users WHERE employee_id = $1',
-            [employeeId]
+            'SELECT * FROM users WHERE email = $1',
+            [email]
         );
 
         if (userCheck.rows.length === 0) {
             await client.query('ROLLBACK');
-            return res.status(404).json({
-                message: "사용자를 찾을 수 없습니다."
-            });
+            return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
         }
 
         const user = userCheck.rows[0];
 
-        // DB에서 사용자 삭제
+        // DB 삭제
         await client.query(
-            'DELETE FROM users WHERE employee_id = $1',
-            [employeeId]
+            'DELETE FROM users WHERE email = $1',
+            [email]
         );
 
         // Redis 캐시 삭제
-        await invalidateUserCache(employeeId);
+        await invalidateUserCache(email);
 
-        // 카카오 ID 매핑도 삭제
+        // 카카오 매핑 삭제
         if (user.kakao_id) {
             await redis.del(`kakao:${user.kakao_id}`);
         }
 
         await client.query('COMMIT');
 
-        res.json({
-            message: "회원 탈퇴가 완료되었습니다."
-        });
+        res.json({ message: "회원 탈퇴 완료" });
 
     } catch (error) {
         await client.query('ROLLBACK');
         console.error("Delete user error:", error);
-        res.status(500).json({
-            message: "회원 탈퇴 처리 중 오류가 발생했습니다."
-        });
+        res.status(500).json({ message: "회원 탈퇴 오류" });
     } finally {
         client.release();
     }
 });
+
 
 // 5. 사용자 정보 수정
-app.put("/api/user/:employeeId", verifyToken, async (req, res) => {
-    const client = await pool.connect();
-
-    try {
-        const { employeeId } = req.params;
-        const { name, email, phone, address } = req.body;
-
-        await client.query('BEGIN');
-
-        // DB 업데이트
-        const result = await client.query(
-            `UPDATE users 
-             SET name = COALESCE($1, name),
-                 email = COALESCE($2, email),
-                 phone = COALESCE($3, phone),
-                 address = COALESCE($4, address),
-                 updated_at = NOW()
-             WHERE employee_id = $5
-             RETURNING *`,
-            [name, email, phone, address, employeeId]
-        );
-
-        if (result.rows.length === 0) {
-            await client.query('ROLLBACK');
-            return res.status(404).json({
-                message: "사용자를 찾을 수 없습니다."
-            });
-        }
-
-        // Redis 캐시 무효화
-        await invalidateUserCache(employeeId);
-
-        await client.query('COMMIT');
-
-        // 비밀번호 제외하고 반환
-        const { password, ...userData } = result.rows[0];
-
-        res.json({
-            message: "사용자 정보가 수정되었습니다.",
-            user: userData
-        });
-
-    } catch (error) {
-        await client.query('ROLLBACK');
-        console.error("Update user error:", error);
-        res.status(500).json({
-            message: "사용자 정보 수정 중 오류가 발생했습니다."
-        });
-    } finally {
-        client.release();
-    }
-});
+// app.put("/api/user/:employeeId", verifyToken, async (req, res) => {
+//     const client = await pool.connect();
+//
+//     try {
+//         const { employeeId } = req.params;
+//         const { name, email, phone, address } = req.body;
+//
+//         await client.query('BEGIN');
+//
+//         // DB 업데이트
+//         const result = await client.query(
+//             `UPDATE users
+//              SET name = COALESCE($1, name),
+//                  email = COALESCE($2, email),
+//                  phone = COALESCE($3, phone),
+//                  address = COALESCE($4, address),
+//                  updated_at = NOW()
+//              WHERE employee_id = $5
+//              RETURNING *`,
+//             [name, email, phone, address, employeeId]
+//         );
+//
+//         if (result.rows.length === 0) {
+//             await client.query('ROLLBACK');
+//             return res.status(404).json({
+//                 message: "사용자를 찾을 수 없습니다."
+//             });
+//         }
+//
+//         // Redis 캐시 무효화
+//         await invalidateUserCache(email);
+//
+//         await client.query('COMMIT');
+//
+//         // 비밀번호 제외하고 반환
+//         const { password, ...userData } = result.rows[0];
+//
+//         res.json({
+//             message: "사용자 정보가 수정되었습니다.",
+//             user: userData
+//         });
+//
+//     } catch (error) {
+//         await client.query('ROLLBACK');
+//         console.error("Update user error:", error);
+//         res.status(500).json({
+//             message: "사용자 정보 수정 중 오류가 발생했습니다."
+//         });
+//     } finally {
+//         client.release();
+//     }
+// });
 
 // ============================================
 // 서버 시작
@@ -1786,11 +1826,17 @@ app.put(
 app.get("/api/orders", verifyToken, async (req, res) => {
     const client = await pool.connect();
     try {
-        const { employeeId } = req.query;
+        // ✅ req.query 사용
+        const { email } = req.query;
 
-        if (!employeeId) {
-            return res.status(400).json({ success: false, message: "employeeId가 필요합니다." });
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                message: "email이 필요합니다."
+            });
         }
+
+        console.log("📋 주문 목록 조회:", email);
 
         const result = await client.query(
             `SELECT
@@ -1806,18 +1852,24 @@ app.get("/api/orders", verifyToken, async (req, res) => {
                  delivery_request,
                  tracking_number
              FROM orders
-             WHERE employee_id = $1
+             WHERE user_email = $1
              ORDER BY created_at DESC`,
-            [employeeId]
+            [email]
         );
+
+        console.log(`✅ 주문 ${result.rows.length}건 조회 완료`);
 
         res.json({
             success: true,
             orders: result.rows
         });
     } catch (error) {
-        console.error("Get orders error:", error);
-        res.status(500).json({ success: false, message: "주문 목록 조회 실패" });
+        console.error("❌ 주문 목록 조회 실패:", error);
+        res.status(500).json({
+            success: false,
+            message: "주문 목록 조회 실패",
+            error: error.message
+        });
     } finally {
         client.release();
     }
