@@ -727,48 +727,215 @@ router.all('/complete', async (req, res) => {
     }
 });
 
+// 📦 재고 확인 API (캐시 사용)
+router.get("/product/:productId/stock", async (req, res) => {
+    const { productId } = req.params;
+
+    try {
+        console.log("📦 재고 확인 요청:", productId);
+
+        // 1️⃣ Redis 캐시 확인
+        const cacheKey = `product:${productId}:stock`;
+        const cached = await redis.get(cacheKey);
+
+        if (cached) {
+            console.log("✅ 캐시에서 재고 조회");
+            const stockData = JSON.parse(cached);
+            return res.json({
+                success: true,
+                stock: stockData.stock,
+                productName: stockData.name,
+                price: stockData.price
+            });
+        }
+
+        // 2️⃣ 캐시 없으면 DB 조회
+        const result = await pool.query(
+            "SELECT id, name, price, stock FROM products WHERE id = $1",
+            [productId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "상품을 찾을 수 없습니다."
+            });
+        }
+
+        const product = result.rows[0];
+
+        // 3️⃣ Redis에 캐싱 (TTL: 10초)
+        await redis.set(
+            cacheKey,
+            JSON.stringify({
+                stock: product.stock,
+                name: product.name,
+                price: product.price
+            }),
+            'EX',
+            10
+        );
+
+        console.log("✅ DB에서 재고 조회 및 캐싱");
+
+        res.json({
+            success: true,
+            stock: product.stock,
+            productName: product.name,
+            price: product.price
+        });
+    } catch (err) {
+        console.error("❌ 재고 확인 오류:", err);
+        res.status(500).json({
+            success: false,
+            message: "재고 확인 중 오류가 발생했습니다."
+        });
+    }
+});
+
+// 🛒 직접 주문 생성 API (재고 있을 때)
+router.post('/order/create', async (req, res) => {
+    try {
+        const { productId, employeeId, userName, userEmail, userPhone } = req.body;
+
+        console.log("🛒 직접 주문 생성 요청:", { productId, userEmail });
+
+        // ✅ 필수 데이터 검증
+        if (!productId) {
+            return res.status(400).json({
+                success: false,
+                message: "productId가 필요합니다."
+            });
+        }
+        if (!userEmail) {
+            return res.status(400).json({
+                success: false,
+                message: "userEmail이 필요합니다."
+            });
+        }
+
+        // 🔥 orderQueue에 job 추가
+        const job = await orderQueue.add(
+            "createOrder",
+            {
+                productId,
+                employeeId: employeeId || "GUEST",
+                userName: userName || "미입력",
+                userEmail,
+                userPhone: userPhone || null,
+            },
+            {
+                attempts: 3,
+                backoff: {
+                    type: 'exponential',
+                    delay: 2000
+                }
+            }
+        );
+
+        console.log(`✅ 큐에 주문 등록: jobId=${job.id}`);
+
+        // 🔄 job 완료 대기 (최대 30초)
+        const result = await job.waitUntilFinished(
+            orderQueue.events,
+            30000
+        );
+
+        if (!result || !result.orderId) {
+            throw new Error("주문 생성 실패");
+        }
+
+        // 🔥 재고 캐시 무효화
+        await redis.del(`product:${productId}:stock`);
+
+        res.json({
+            success: true,
+            orderId: result.orderId,
+            message: "주문이 생성되었습니다."
+        });
+
+    } catch (err) {
+        console.error("❌ 직접 주문 생성 실패:", err);
+        res.status(500).json({
+            success: false,
+            message: err.message || "주문 생성 중 오류가 발생했습니다."
+        });
+    }
+});
+
+// 🔄 기존 /queue/init 수정 (재고 없을 때만 대기열)
 router.post('/queue/init', async (req, res) => {
     try {
         const { productId, employeeId, userName, userEmail, userPhone } = req.body;
 
-        const job = await orderQueue.add('createOrder', {
-            productId,
-            employeeId,
-            userName,
-            userEmail,
-            userPhone,
-        });
-        // 🔥 주문 생성 후 5분 뒤 자동취소 job 생성
-        // await orderQueue.add(
-        //     "autoCancelOrder",
-        //     { orderId: null, employeeId },
-        //     { delay: 1 * 60 * 1000 }
-        // );
+        console.log("⏳ 대기열 등록 요청:", { productId, userEmail });
 
+        const job = await orderQueue.add(
+            'createOrder',
+            {
+                productId,
+                employeeId: employeeId || "GUEST",
+                userName: userName || "미입력",
+                userEmail,
+                userPhone: userPhone || null,
+            }
+        );
 
         const waitingCount = await redis.llen('bull:orderInitQueue:wait');
+
         res.json({
             success: true,
             jobId: job.id,
             position: waitingCount + 1,
         });
     } catch (e) {
-        console.error('큐 등록 실패:', e);
-        res.status(500).json({ success: false });
+        console.error('❌ 큐 등록 실패:', e);
+        res.status(500).json({
+            success: false,
+            message: e.message
+        });
     }
 });
 
 router.get('/queue/status/:jobId', async (req, res) => {
     try {
         const job = await orderQueue.getJob(req.params.jobId);
-        if (!job) return res.status(404).json({ success: false });
+
+        if (!job) {
+            return res.status(404).json({
+                success: false,
+                message: "Job을 찾을 수 없습니다."
+            });
+        }
+
         const state = await job.getState();
-        if (state === 'completed') return res.json({ status: 'done', result: job.returnvalue });
-        if (state === 'failed') return res.json({ status: 'failed' });
+
+        if (state === 'completed') {
+            return res.json({
+                status: 'completed',
+                result: job.returnvalue
+            });
+        }
+
+        if (state === 'failed') {
+            return res.json({
+                status: 'failed',
+                error: job.failedReason
+            });
+        }
+
         const waiting = await redis.llen('bull:orderInitQueue:wait');
-        res.json({ status: 'waiting', position: waiting });
+
+        res.json({
+            status: 'waiting',
+            position: waiting
+        });
     } catch (e) {
-        res.status(500).json({ success: false });
+        console.error('❌ 상태 조회 실패:', e);
+        res.status(500).json({
+            success: false,
+            message: e.message
+        });
     }
 });
 
