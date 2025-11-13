@@ -1798,14 +1798,21 @@ app.put(
 // ============================================
 
 // 주문 목록 조회 (MyPage용)
-app.get("/api/orders", verifyToken, async (req, res) => {
+// 🔥 경로 수정: 쿼리 파라미터 방식
+app.get("/api/myorder", verifyToken, async (req, res) => {
     const client = await pool.connect();
     try {
-        const { email  } = req.query;
+        // ✅ req.query 사용
+        const { email } = req.query;
 
         if (!email) {
-            return res.status(400).json({ success: false, message: "employeeId가 필요합니다." });
+            return res.status(400).json({
+                success: false,
+                message: "email이 필요합니다."
+            });
         }
+
+        console.log("📋 주문 목록 조회:", email);
 
         const result = await client.query(
             `SELECT
@@ -1821,18 +1828,24 @@ app.get("/api/orders", verifyToken, async (req, res) => {
                  delivery_request,
                  tracking_number
              FROM orders
-             WHERE email = $1
+             WHERE user_email = $1
              ORDER BY created_at DESC`,
             [email]
         );
+
+        console.log(`✅ 주문 ${result.rows.length}건 조회 완료`);
 
         res.json({
             success: true,
             orders: result.rows
         });
     } catch (error) {
-        console.error("Get orders error:", error);
-        res.status(500).json({ success: false, message: "주문 목록 조회 실패" });
+        console.error("❌ 주문 목록 조회 실패:", error);
+        res.status(500).json({
+            success: false,
+            message: "주문 목록 조회 실패",
+            error: error.message
+        });
     } finally {
         client.release();
     }
