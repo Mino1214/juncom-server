@@ -1914,12 +1914,13 @@ app.use("/api/uploads", express.static(uploadsPath));
 
 app.post("/api/payment/queue/cancel", async (req, res) => {
     try {
-        const { productId, jobId } = req.body;
+        const { jobId } = req.body;
 
-        if (!productId || !jobId) {
-            return res.json({ success: false, message: "필수값 누락" });
+        if (!jobId) {
+            return res.json({ success: false, message: "jobId 없음" });
         }
 
+        const productId = 3; // ← 하드코딩
         const listKey = `queue:list:${productId}`;
         const mapKey = `queue:map:${jobId}`;
         const statusKey = `queue:status:${jobId}`;
@@ -1930,7 +1931,7 @@ app.post("/api/payment/queue/cancel", async (req, res) => {
         // 2️⃣ job map 삭제
         await redis.del(mapKey);
 
-        // 3️⃣ status도 삭제
+        // 3️⃣ status 삭제 (혹시 남아 있을 수 있으므로)
         await redis.del(statusKey);
 
         return res.json({ success: true });
