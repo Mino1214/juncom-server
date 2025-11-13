@@ -1914,40 +1914,34 @@ app.use("/api/uploads", express.static(uploadsPath));
 app.post("/api/product/consume", async (req, res) => {
     const { productId } = req.body;
 
-    try {
-        const key = `product:${productId}:stock`;
+    const key = `product:${productId}:stock`;
+    const stock = await redis.decr(key);
 
-        // 재고 감소
-        const stock = await redis.decr(key);
-
-        // 감소된 결과가 음수 → 재고 없는 상태 → 롤백
-        if (stock < 0) {
-            await redis.incr(key); // 롤백
-            return res.json({ success: false, message: "재고 없음" });
-        }
-
-        // 정상 차감
-        return res.json({ success: true, remaining: stock });
-
-    } catch (err) {
-        console.error("❌ consume error:", err);
-        res.status(500).json({ success: false });
+    if (stock < 0) {
+        await redis.incr(key);
+        return res.json({ success: false });
     }
+
+    // DB도 같이 감소
+    await client.query(
+        "UPDATE products SET stock = stock - 1 WHERE id = $1",
+        [productId]
+    );
+
+    return res.json({ success: true });
 });
 app.post("/api/product/restore", async (req, res) => {
     const { productId } = req.body;
 
-    try {
-        const key = `product:${productId}:stock`;
-        const result = await redis.incr(key);
+    await redis.incr(`product:${productId}:stock`);
+    await client.query(
+        "UPDATE products SET stock = stock + 1 WHERE id = $1",
+        [productId]
+    );
 
-        return res.json({ success: true, newStock: result });
-
-    } catch (err) {
-        console.error("❌ restore error:", err);
-        res.status(500).json({ success: false });
-    }
+    res.json({ success: true });
 });
+
 app.get("/api/product/:productId/stock", async (req, res) => {
     const { productId } = req.params;
 
