@@ -1984,7 +1984,6 @@ async function processNextInQueue(productId) {
 
     // 🔥 ready 상태 저장 → 프론트에서 status === "ready" 잡음
     await redis.hset(`queue:status:${nextJobId}`, "status", "ready");
-
     console.log("🔥 processNextInQueue -> READY:", nextJobId, jobInfo);
 }
 app.get("/api/product/:productId/stock", async (req, res) => {
