@@ -727,31 +727,93 @@ router.all('/complete', async (req, res) => {
     }
 });
 
+// 🔥 재고 있으면 바로 구매 처리 API
+router.post("/product/:productId/quick-purchase", async (req, res) => {
+    try {
+        const { productId } = req.params;
+        const { userName, userEmail, userPhone, employeeId } = req.body;
+
+        const stockKey = `product:${productId}:stock`;
+
+        // 🔹 재고 차감
+        const stock = await redis.decr(stockKey);
+
+        if (stock < 0) {
+            // 롤백
+            await redis.incr(stockKey);
+            return res.json({
+                success: false,
+                outOfStock: true,
+                message: "재고 없음"
+            });
+        }
+
+        // 🔥 재고 있음 → 바로 주문 생성
+        const orderId = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+        const client = await pool.connect();
+
+        await client.query(`
+            INSERT INTO orders (
+                order_id, employee_id, user_name, user_email, user_phone,
+                product_id, payment_status, created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW())
+        `, [
+            orderId,
+            employeeId || 'GUEST',
+            userName || '미입력',
+            userEmail,
+            userPhone,
+            productId
+        ]);
+        await client.query(
+            "UPDATE products SET stock = stock - 1 WHERE id = $1",
+            [productId]
+        );
+        client.release();
+
+        // 🔥 캐시 초기화
+        await redis.del(`product:${productId}:stock`);
+
+        return res.json({
+            success: true,
+            orderId
+        });
+
+    } catch (err) {
+        console.error("🔥 quick-purchase error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "바로 구매 처리 오류",
+        });
+    }
+});
+
+
+
 // 📦 재고 확인 API (캐시 사용)
+// 📦 재고 확인 API (숫자 캐시 기반으로 통일)
 router.get("/product/:productId/stock", async (req, res) => {
     const { productId } = req.params;
 
     try {
         console.log("📦 재고 확인 요청:", productId);
 
-        // 1️⃣ Redis 캐시 확인
         const cacheKey = `product:${productId}:stock`;
+
+        // 1️⃣ 캐시 확인 (정수 기반)
         const cached = await redis.get(cacheKey);
 
-        if (cached) {
-            console.log("✅ 캐시에서 재고 조회");
-            const stockData = JSON.parse(cached);
-            return res.json({
-                success: true,
-                stock: stockData.stock,
-                productName: stockData.name,
-                price: stockData.price
-            });
+        if (cached !== null) {
+            // cached는 문자열이므로 Number 변환
+            const stock = Number(cached);
+            return res.json({ success: true, stock });
         }
 
         // 2️⃣ 캐시 없으면 DB 조회
         const result = await pool.query(
-            "SELECT id, name, price, stock FROM products WHERE id = $1",
+            "SELECT stock FROM products WHERE id = $1",
             [productId]
         );
 
@@ -762,33 +824,18 @@ router.get("/product/:productId/stock", async (req, res) => {
             });
         }
 
-        const product = result.rows[0];
+        const stock = result.rows[0].stock;
 
-        // 3️⃣ Redis에 캐싱 (TTL: 10초)
-        await redis.set(
-            cacheKey,
-            JSON.stringify({
-                stock: product.stock,
-                name: product.name,
-                price: product.price
-            }),
-            'EX',
-            10
-        );
+        // 3️⃣ Redis에 정수로 캐싱 (TTL 10초)
+        await redis.set(cacheKey, stock, 'EX', 10);
 
-        console.log("✅ DB에서 재고 조회 및 캐싱");
+        return res.json({ success: true, stock });
 
-        res.json({
-            success: true,
-            stock: product.stock,
-            productName: product.name,
-            price: product.price
-        });
     } catch (err) {
         console.error("❌ 재고 확인 오류:", err);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
-            message: "재고 확인 중 오류가 발생했습니다."
+            message: "재고 확인 오류"
         });
     }
 });
@@ -864,79 +911,60 @@ router.post('/order/create', async (req, res) => {
 });
 
 // 🔄 기존 /queue/init 수정 (재고 없을 때만 대기열)
+import { v4 as uuid } from 'uuid';
+
 router.post('/queue/init', async (req, res) => {
     try {
-        const { productId, employeeId, userName, userEmail, userPhone } = req.body;
+        const { productId } = req.body;
 
-        console.log("⏳ 대기열 등록 요청:", { productId, userEmail });
+        const jobId = uuid(); // 🔥 브라우저별 ID
 
-        const job = await orderQueue.add(
-            'createOrder',
-            {
-                productId,
-                employeeId: employeeId || "GUEST",
-                userName: userName || "미입력",
-                userEmail,
-                userPhone: userPhone || null,
-            }
-        );
+        // 기다리는 queue list 따로 운영
+        // queue:list:3   (productId별)
+        await redis.rPush(`queue:list:${productId}`, jobId);
 
-        const waitingCount = await redis.llen('bull:orderInitQueue:wait');
+        const waiting = await redis.lLen(`queue:list:${productId}`);
 
         res.json({
             success: true,
-            jobId: job.id,
-            position: waitingCount + 1,
+            jobId,
+            position: waiting
         });
+
     } catch (e) {
-        console.error('❌ 큐 등록 실패:', e);
-        res.status(500).json({
-            success: false,
-            message: e.message
-        });
+        console.error(e);
+        res.status(500).json({ success: false });
     }
 });
 
 router.get('/queue/status/:jobId', async (req, res) => {
     try {
-        const job = await orderQueue.getJob(req.params.jobId);
+        const { jobId } = req.params;
 
-        if (!job) {
-            return res.status(404).json({
-                success: false,
-                message: "Job을 찾을 수 없습니다."
-            });
+        // productId 매핑 Store (save at init)
+        const productId = await redis.get(`queue:map:${jobId}`);
+        const list = await redis.lRange(`queue:list:${productId}`, 0, -1);
+
+        const idx = list.indexOf(jobId);
+
+        if (idx === -1) {
+            return res.json({ status: 'failed', error: "not_in_queue" });
         }
 
-        const state = await job.getState();
-
-        if (state === 'completed') {
+        if (idx === 0) {
             return res.json({
-                status: 'completed',
-                result: job.returnvalue
+                status: 'completed', // 차례 됨
+                result: { ready: true }
             });
         }
 
-        if (state === 'failed') {
-            return res.json({
-                status: 'failed',
-                error: job.failedReason
-            });
-        }
-
-        const waiting = await redis.llen('bull:orderInitQueue:wait');
-
-        res.json({
+        return res.json({
             status: 'waiting',
-            position: waiting
+            position: idx + 1
         });
-    } catch (e) {
-        console.error('❌ 상태 조회 실패:', e);
-        res.status(500).json({
-            success: false,
-            message: e.message
-        });
+
+    } catch (err) {
+        res.status(500).json({ success: false });
     }
 });
-
 export default router;
