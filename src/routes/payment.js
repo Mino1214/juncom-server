@@ -753,32 +753,47 @@ router.post("/product/:productId/quick-purchase", async (req, res) => {
         const client = await pool.connect();
         await client.query("BEGIN");
 
-        // 🔥 1️⃣ DB 재고 차감 (필수)
+        // 📌 0) 제품 정보 조회 (product_name, price 가져오기)
+        const productInfo = await client.query(
+            "SELECT name, price FROM products WHERE id = $1",
+            [productId]
+        );
+
+        if (productInfo.rows.length === 0) {
+            throw new Error("상품 정보 없음");
+        }
+
+        const { name: productName, price } = productInfo.rows[0];
+
+        // 🔥 1️⃣ DB 재고 차감
         await client.query(
             "UPDATE products SET stock = stock - 1 WHERE id = $1",
             [productId]
         );
 
-        // 2️⃣ 주문 생성
+        // 🔥 2️⃣ 주문 생성 (product_name + price 포함)
         await client.query(`
             INSERT INTO orders (
                 order_id, employee_id, user_name, user_email, user_phone,
-                product_id, payment_status, created_at
+                product_id, product_name, price,
+                payment_status, created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW())
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',NOW())
         `, [
             orderId,
             employeeId || 'GUEST',
             userName || '미입력',
             userEmail,
             userPhone,
-            productId
+            productId,
+            productName,
+            price
         ]);
 
         await client.query("COMMIT");
         client.release();
 
-        // 🔥 3️⃣ Redis 캐시 초기화
+        // 🔥 Redis 캐시 초기화
         await redis.del(stockKey);
 
         return res.json({
@@ -794,7 +809,6 @@ router.post("/product/:productId/quick-purchase", async (req, res) => {
         });
     }
 });
-
 
 // 📦 재고 확인 API (캐시 사용)
 // 📦 재고 확인 API (숫자 캐시 기반으로 통일)
@@ -934,6 +948,7 @@ router.post('/queue/init', async (req, res) => {
             jobId,
             position: waiting
         });
+
 
     } catch (e) {
         console.error(e);
