@@ -783,7 +783,7 @@ router.post("/product/:productId/quick-purchase", async (req, res) => {
                 user_phone,
                 product_id,
                 product_name,
-                price,
+                product_price,
                 stock_snapshot,
                 payment_status,
                 created_at
