@@ -1910,6 +1910,7 @@ const uploadsPath = path.join(__dirname, "uploads");
 // 기존 라인 교체
 // app.use("/api/uploads", express.static("uploads"));
 app.use("/api/uploads", express.static(uploadsPath));
+//
 app.post("/api/product/consume", async (req, res) => {
     const { productId } = req.body;
 
