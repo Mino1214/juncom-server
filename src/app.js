@@ -68,7 +68,7 @@ const TOKEN_EXPIRES_IN = "365d"; // 6시간 유효
 function generateToken(user) {
     return jwt.sign(
         {
-            employeeId: user.employee_id,
+            email: user.email,   // ← email만 사용
             role: user.role,
             name: user.name
         },
@@ -76,6 +76,7 @@ function generateToken(user) {
         { expiresIn: TOKEN_EXPIRES_IN }
     );
 }
+
 
 // 토큰 검증 미들웨어
 function verifyToken(req, res, next) {
@@ -1557,7 +1558,7 @@ app.put("/api/user/:employeeId", verifyToken, async (req, res) => {
         }
 
         // Redis 캐시 무효화
-        await invalidateUserCache(employeeId);
+        await invalidateUserCache(email);
 
         await client.query('COMMIT');
 
