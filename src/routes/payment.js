@@ -735,11 +735,10 @@ router.post("/product/:productId/quick-purchase", async (req, res) => {
 
         const stockKey = `product:${productId}:stock`;
 
-        // 🔹 재고 차감
+        // 🔹 Redis 재고 차감
         const stock = await redis.decr(stockKey);
 
         if (stock < 0) {
-            // 롤백
             await redis.incr(stockKey);
             return res.json({
                 success: false,
@@ -752,7 +751,15 @@ router.post("/product/:productId/quick-purchase", async (req, res) => {
         const orderId = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
         const client = await pool.connect();
+        await client.query("BEGIN");
 
+        // 🔥 1️⃣ DB 재고 차감 (필수)
+        await client.query(
+            "UPDATE products SET stock = stock - 1 WHERE id = $1",
+            [productId]
+        );
+
+        // 2️⃣ 주문 생성
         await client.query(`
             INSERT INTO orders (
                 order_id, employee_id, user_name, user_email, user_phone,
@@ -767,14 +774,12 @@ router.post("/product/:productId/quick-purchase", async (req, res) => {
             userPhone,
             productId
         ]);
-        await client.query(
-            "UPDATE products SET stock = stock - 1 WHERE id = $1",
-            [productId]
-        );
+
+        await client.query("COMMIT");
         client.release();
 
-        // 🔥 캐시 초기화
-        await redis.del(`product:${productId}:stock`);
+        // 🔥 3️⃣ Redis 캐시 초기화
+        await redis.del(stockKey);
 
         return res.json({
             success: true,
@@ -789,7 +794,6 @@ router.post("/product/:productId/quick-purchase", async (req, res) => {
         });
     }
 });
-
 
 
 // 📦 재고 확인 API (캐시 사용)
