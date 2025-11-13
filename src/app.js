@@ -1946,7 +1946,7 @@ app.post("/api/payment/queue/cancel", async (req, res) => {
             return res.json({ success: false, message: "jobId 없음" });
         }
 
-        const productId = 3; // ← 하드코딩
+        const productId = 1579; // ← 하드코딩
         const listKey = `queue:list:${productId}`;
         const mapKey = `queue:map:${jobId}`;
         const statusKey = `queue:status:${jobId}`;
