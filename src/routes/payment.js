@@ -742,7 +742,7 @@ router.post('/queue/init', async (req, res) => {
         await orderQueue.add(
             "autoCancelOrder",
             { orderId: null, employeeId },
-            { delay: 5 * 60 * 1000 }
+            { delay: 1 * 60 * 1000 }
         );
 
 

@@ -96,9 +96,9 @@ const worker = new Worker(
 );
 // ✅ NEW: 자동 취소 워커
 const cancelWorker = new Worker(
-    "orderInitQueue",
+    "orderCancelQueue",
     async (job) => {
-        if (job.name !== "autoCancelOrder") return;
+        if (job.name !== "orderCancelQueue") return;
 
         const { orderId } = job.data;
         const client = await pool.connect();
