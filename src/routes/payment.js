@@ -925,7 +925,7 @@ router.post('/queue/init', async (req, res) => {
 
         // 기다리는 queue list 따로 운영
         // queue:list:3   (productId별)
-        await redis.rPush(`queue:list:${productId}`, jobId);
+        await redis.rpush(`queue:list:${productId}`, jobId);
 
         const waiting = await redis.lLen(`queue:list:${productId}`);
 
