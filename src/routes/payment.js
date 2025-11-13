@@ -1009,16 +1009,24 @@ router.get('/queue/status/:jobId', async (req, res) => {
 
         // 1) jobId → productId 조회
         const productId = await redis.get(`queue:map:${jobId}`);
+
+        // productId가 없다는 건?
+        // → 이미 pop된 상태 = 내 차례 = ready
         if (!productId) {
-            // 이미 대기열 처리된 상태 → ready
-            return res.json({ status: 'ready' });
+            return res.json({
+                status: 'ready',
+                position: 0
+            });
         }
 
+        // 2) queue list에서 현재 위치 확인
         const listKey = `queue:list:${productId}`;
         const list = await redis.lrange(listKey, 0, -1);
+
+        // index 계산 (동적으로 매번)
         const idx = list.indexOf(jobId);
 
-        // 2) 내가 리스트에 있으면 → 무조건 waiting (재고 체크 X)
+        // 3) 리스트 안에 있으면 → waiting 상태
         if (idx >= 0) {
             return res.json({
                 status: 'waiting',
@@ -1026,15 +1034,18 @@ router.get('/queue/status/:jobId', async (req, res) => {
             });
         }
 
-        // 3) 내가 리스트에서 빠져 있으면 = pop됨 = 내 차례(ready)
+        // 4) 리스트에서 빠졌는데 map도 없으면 → ready
         return res.json({
             status: 'ready',
-            message: '차례가 되었습니다'
+            position: 0
         });
 
     } catch (err) {
         console.error(err);
-        return res.status(500).json({ status: 'failed', error: '상태 오류' });
+        return res.status(500).json({
+            status: 'failed',
+            error: '상태 조회 오류'
+        });
     }
 });
 export default router;
