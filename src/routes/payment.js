@@ -369,7 +369,34 @@ router.post('/cancel', async (req, res) => {
          WHERE id = $1`,
                 [productId]
             );
+            // ✅ 재고 복구 후 대기열 처리
+            if (orderRows.length > 0 && orderRows[0].product_id) {
+                const productId = orderRows[0].product_id;
 
+                // 재고 복구
+                await client.query(
+                    `UPDATE products 
+                 SET stock = stock + 1, updated_at = NOW()
+                 WHERE id = $1`,
+                    [productId]
+                );
+
+                // Redis 재고 캐시 업데이트
+                const stockKey = `product:${productId}:stock`;
+                await redis.incr(stockKey);
+
+                // 🔥 대기열 처리
+                const queueKey = `queue:list:${productId}`;
+                const firstWaiter = await redis.lindex(queueKey, 0); // 첫 번째 대기자 확인
+
+                if (firstWaiter) {
+                    // 첫 번째 대기자를 ready 상태로 변경
+                    await redis.set(`queue:status:${firstWaiter}`, 'ready', 'EX', 60);
+                    console.log(`📢 대기자 ${firstWaiter}에게 구매 기회 부여`);
+                }
+
+                console.log(`🔄 상품 ${productId} 재고 복원 및 대기열 처리 완료`);
+            }
             console.log(`🔄 상품 ${productId} 재고 복원 완료`);
         } else {
             console.warn(`⚠️ 주문 ${orderId}의 상품 ID를 찾을 수 없습니다`);
@@ -975,17 +1002,28 @@ router.post('/queue/init', async (req, res) => {
     }
 });
 
+// 🔄 수정된 queue/status 엔드포인트
 router.get('/queue/status/:jobId', async (req, res) => {
     try {
         const { jobId } = req.params;
 
+        // 0. 먼저 ready 상태 확인 (재고 복구로 인한 처리)
+        const statusCheck = await redis.get(`queue:status:${jobId}`);
+        if (statusCheck === 'ready') {
+            console.log(`✅ ${jobId}는 재고 복구로 ready 상태`);
+            return res.json({
+                status: 'ready',
+                message: '재고가 복구되어 구매 가능합니다'
+            });
+        }
+
         // 1) jobId -> productId 찾기
         const productId = await redis.get(`queue:map:${jobId}`);
         if (!productId) {
-            // 🔥 jobId가 queue:map 에 없다는 건 이미 처리되었다는 뜻 → READY
+            // jobId가 queue:map에 없다는 건 이미 처리되었다는 뜻
             return res.json({
                 status: 'ready',
-                message: 'jobId not found in map → treat as ready'
+                message: '대기열 처리 완료'
             });
         }
 
@@ -993,20 +1031,22 @@ router.get('/queue/status/:jobId', async (req, res) => {
         const list = await redis.lrange(listKey, 0, -1);
         const idx = list.indexOf(jobId);
 
-        // 2) 🔥 jobId가 리스트에 없으면 = LPOP 됨 = 내 차례
+        // 2) jobId가 리스트에 없으면 = LPOP 됨 = 내 차례
         if (idx === -1) {
+            // 재고 확인
             const redisStock = await redis.get(`product:${productId}:stock`);
             const stock = parseInt(redisStock || "0", 10);
 
             if (stock > 0) {
                 return res.json({
                     status: 'ready',
-                    message: 'LPOP removed → my turn'
+                    message: '차례가 되어 구매 가능합니다'
                 });
             } else {
+                // 재고가 없으면 실패
                 return res.json({
                     status: 'failed',
-                    error: 'no_stock_after_pop'
+                    error: '재고 소진'
                 });
             }
         }
@@ -1015,8 +1055,12 @@ router.get('/queue/status/:jobId', async (req, res) => {
         const redisStock = await redis.get(`product:${productId}:stock`);
         const stock = parseInt(redisStock || "0", 10);
 
-        // 4) idx 0 이고 재고 있으면 ready
+        // 4) 첫 번째 대기자이고 재고가 있으면 ready
         if (idx === 0 && stock > 0) {
+            // 대기열에서 제거
+            await redis.lpop(listKey);
+            await redis.del(`queue:map:${jobId}`);
+
             return res.json({
                 status: 'ready',
                 message: '구매 가능'
@@ -1026,12 +1070,17 @@ router.get('/queue/status/:jobId', async (req, res) => {
         // 5) 아직 대기중
         return res.json({
             status: 'waiting',
-            position: idx + 1
+            position: idx + 1,
+            estimatedWait: `약 ${(idx + 1) * 10}초` // 예상 대기 시간
         });
 
     } catch (err) {
-        console.error(err);
-        return res.status(500).json({ success: false });
+        console.error('❌ 대기열 상태 확인 오류:', err);
+        return res.status(500).json({
+            success: false,
+            error: '상태 확인 실패'
+        });
     }
 });
+
 export default router;
