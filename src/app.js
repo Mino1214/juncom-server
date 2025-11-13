@@ -1948,7 +1948,7 @@ app.post("/api/product/restore", async (req, res) => {
         );
         client.release();
 
-        // 2️⃣ Redis 캐시 다시 채우기 (DB 최신값 반영)
+        // 2️⃣ Redis 캐시 다시 채우기
         const updated = await pool.query(
             "SELECT stock FROM products WHERE id = $1",
             [productId]
@@ -1956,11 +1956,14 @@ app.post("/api/product/restore", async (req, res) => {
 
         const newStock = updated.rows[0]?.stock;
 
-        // Redis 재설정
         await redis.set(redisKey, newStock);
 
+        // 🔥 여기가 핵심 (반드시 await)
+        await processNextInQueue(productId);
+
+        // 응답은 끝에
         res.json({ success: true, stock: newStock });
-        processNextInQueue(productId);
+
     } catch (err) {
         console.error("restore error:", err);
         res.status(500).json({ success: false });
