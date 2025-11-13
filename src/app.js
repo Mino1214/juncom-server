@@ -1123,33 +1123,31 @@ app.post("/api/auth/signup", async (req, res) => {
 });
 
 // 4. 사용자 정보 조회
-app.get("/api/user/:employeeId",verifyToken, async (req, res) => {
+app.get("/api/user/:employeeId", verifyToken, async (req, res) => {
     const client = await pool.connect();
 
     try {
         const { employeeId } = req.params;
 
-        // 1. Redis 캐시 확인
-        let user = await getUserFromCache(employeeId);
+        // ❌ employeeId 캐시 조회 제거
 
-        // 2. 캐시에 없으면 DB 조회
-        if (!user) {
-            const result = await client.query(
-                'SELECT * FROM users WHERE employee_id = $1',
-                [employeeId]
-            );
+        // ✔ DB에서만 조회
+        const result = await client.query(
+            'SELECT * FROM users WHERE employee_id = $1',
+            [employeeId]
+        );
 
-            if (result.rows.length === 0) {
-                return res.status(404).json({
-                    message: "사용자를 찾을 수 없습니다."
-                });
-            }
-
-            user = result.rows[0];
-            await setUserCache(employeeId, user);
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                message: "사용자를 찾을 수 없습니다."
+            });
         }
 
-        // 비밀번호는 제외하고 반환
+        const user = result.rows[0];
+
+        // ✔ email 기준으로 캐시 저장
+        await setUserCache(user.email, user);
+
         const { password, ...userData } = user;
 
         res.json(userData);
@@ -1164,8 +1162,9 @@ app.get("/api/user/:employeeId",verifyToken, async (req, res) => {
     }
 });
 
+
 // 5. 사용자 정보 수정
-app.put("/api/user/:employeeId",verifyToken, async (req, res) => {
+app.put("/api/user/:employeeId", verifyToken, async (req, res) => {
     const client = await pool.connect();
 
     try {
@@ -1174,7 +1173,6 @@ app.put("/api/user/:employeeId",verifyToken, async (req, res) => {
 
         await client.query('BEGIN');
 
-        // DB 업데이트
         const result = await client.query(
             `UPDATE users 
              SET name = COALESCE($1, name),
@@ -1195,14 +1193,16 @@ app.put("/api/user/:employeeId",verifyToken, async (req, res) => {
             });
         }
 
-        // Redis 캐시 무효화
-        await invalidateUserCache(employeeId);
+        const updatedUser = result.rows[0];
+
+        // ✔ email 기준 캐시 삭제
+        await invalidateUserCache(updatedUser.email);
 
         await client.query('COMMIT');
 
         res.json({
             message: "사용자 정보가 수정되었습니다.",
-            user: result.rows[0]
+            user: updatedUser
         });
 
     } catch (error) {
@@ -1215,6 +1215,7 @@ app.put("/api/user/:employeeId",verifyToken, async (req, res) => {
         client.release();
     }
 });
+
 // ============================================
 // 개발용: DB 초기화 및 테스트 데이터
 // ============================================
