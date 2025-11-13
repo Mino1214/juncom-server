@@ -1970,19 +1970,19 @@ app.post("/api/product/restore", async (req, res) => {
 async function processNextInQueue(productId) {
     const redisListKey = `queue:list:${productId}`;
 
-    const nextJobId = await redis.lPop(redisListKey);
+    const nextJobId = await redis.lpop(redisListKey);
     if (!nextJobId) return; // 대기열 없음
 
     // map에서 정보 가져오기
-    const jobInfo = await redis.hGetAll(`queue:map:${nextJobId}`);
+    const jobInfo = await redis.hgetall(`queue:map:${nextJobId}`);
     if (!jobInfo) return;
 
     // 주문 생성
-    const orderId = await createOrder(jobInfo);
+    // const orderId = await createOrder(jobInfo);
 
     // 상태 완료로 변경
-    await redis.hSet(`queue:status:${nextJobId}`, "status", "completed");
-    await redis.hSet(`queue:status:${nextJobId}`, "orderId", orderId);
+    await redis.hset(`queue:status:${nextJobId}`, "status", "completed");
+    // await redis.hset(`queue:status:${nextJobId}`, "orderId", orderId);
 }
 app.get("/api/product/:productId/stock", async (req, res) => {
     const { productId } = req.params;
