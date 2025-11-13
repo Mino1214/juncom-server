@@ -1072,31 +1072,45 @@ app.post("/api/auth/signup", async (req, res) => {
     const client = await pool.connect();
 
     try {
-        const { employeeId, password, name, email, phone, address, kakaoId, marketingAgreed ,address_detail} = req.body;
+        const { employeeId, password, name, email, phone, address, kakaoId, marketingAgreed, address_detail } = req.body;
 
-        if ( !name) {
+        if (!name || !email) {
+            return res.status(400).json({ message: "필수 정보를 입력해주세요." });
+        }
+
+        // ------------------------------------------------------
+        // 1️⃣ 이메일 도메인 검사 (@kr.kpmg.com)
+        // ------------------------------------------------------
+        if (!email.toLowerCase().endsWith("@kr.kpmg.com")) {
             return res.status(400).json({
-                message: "필수 정보를 입력해주세요."
+                message: "회사 이메일(@kr.kpmg.com)로만 가입할 수 있습니다."
             });
         }
 
-        // 트랜잭션 시작
         await client.query('BEGIN');
 
-        // 1. 이미 존재하는 사번인지 확인
-        const existCheck = await client.query(
-            'SELECT employee_id FROM users WHERE employee_id = $1',
-            [employeeId]
+        // ------------------------------------------------------
+        // 2️⃣ 블랙리스트 검사
+        // ------------------------------------------------------
+        const blacklistCheck = await client.query(
+            "SELECT status, reason FROM employee_status WHERE email = $1",
+            [email]
         );
 
-        if (existCheck.rows.length > 0) {
-            await client.query('ROLLBACK');
-            return res.status(409).json({
-                message: "이미 등록된 사번입니다."
+        if (blacklistCheck.rows.length > 0 && blacklistCheck.rows[0].status === "blacklisted") {
+            await client.query("ROLLBACK");
+            return res.status(403).json({
+                message: "노트북 교체 시 본인이 사용하던 노트북을 구매하신 분은 이번 구매에 참여하실 수 없습니다.<br>\n" +
+                    "    더 많은 분들께 공평한 기회를 드리기 위한 조치이오니 이해와 협조 부탁드립니다.<br><br>\n" +
+                    "    감사합니다.",
+                reason: blacklistCheck.rows[0].reason || null
             });
         }
 
-        // 2. DB에 사용자 정보 저장
+
+        // ------------------------------------------------------
+        // 4️⃣ 사용자 저장
+        // ------------------------------------------------------
         const hashedPassword = password ? await bcrypt.hash(password, 10) : '';
 
         const insertResult = await client.query(
@@ -1104,31 +1118,28 @@ app.post("/api/auth/signup", async (req, res) => {
                 employee_id, password, name, email, phone, address, kakao_id, marketing_agreed, role, created_at, address_detail
             )
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'user',NOW(),$9)
-                 RETURNING *`,
+             RETURNING *`,
             [
                 employeeId,
                 hashedPassword,
                 name,
-                email || '',
+                email,
                 phone || '',
                 address || '',
                 kakaoId || null,
-                marketingAgreed ?? false,   // ✅ 불리언 안전 처리
+                marketingAgreed ?? false,
                 address_detail || ''
             ]
         );
 
         const newUser = insertResult.rows[0];
 
-        // 3. 카카오 ID 매핑 저장 (Redis)
         if (kakaoId) {
             await redis.set(`kakao:${kakaoId}`, employeeId);
         }
 
-        // 4. 사용자 정보 캐싱 (Redis)
         await setUserCache(newUser.email, newUser);
 
-        // 트랜잭션 커밋
         await client.query('COMMIT');
 
         res.status(201).json({
@@ -1140,14 +1151,29 @@ app.post("/api/auth/signup", async (req, res) => {
     } catch (error) {
         await client.query('ROLLBACK');
         console.error("Signup error:", error);
-        res.status(500).json({
-            message: "회원가입 처리 중 오류가 발생했습니다."
-        });
+        res.status(500).json({ message: "회원가입 처리 중 오류가 발생했습니다." });
     } finally {
         client.release();
     }
 });
 
+app.get("/api/orders/stats", async (req, res) => {
+    try {
+        const { rows } = await pool.query(`
+            SELECT
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE status = 'pending') AS pending,
+                COUNT(*) FILTER (WHERE status = 'paid') AS paid,
+                COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled
+            FROM orders
+        `);
+
+        res.json(rows[0]);
+    } catch (err) {
+        console.error("order stats error:", err);
+        res.status(500).json({ error: "Failed to load stats" });
+    }
+});
 // 4. 사용자 정보 조회
 app.get("/api/user/:email", verifyToken, async (req, res) => {
     const client = await pool.connect();
