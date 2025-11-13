@@ -1007,80 +1007,34 @@ router.get('/queue/status/:jobId', async (req, res) => {
     try {
         const { jobId } = req.params;
 
-        // 0. 먼저 ready 상태 확인 (재고 복구로 인한 처리)
-        const statusCheck = await redis.get(`queue:status:${jobId}`);
-        if (statusCheck === 'ready') {
-            console.log(`✅ ${jobId}는 재고 복구로 ready 상태`);
-            return res.json({
-                status: 'ready',
-                message: '재고가 복구되어 구매 가능합니다'
-            });
-        }
-
-        // 1) jobId -> productId 찾기
+        // 1) jobId → productId 조회
         const productId = await redis.get(`queue:map:${jobId}`);
         if (!productId) {
-            // jobId가 queue:map에 없다는 건 이미 처리되었다는 뜻
-            return res.json({
-                status: 'ready',
-                message: '대기열 처리 완료'
-            });
+            // 이미 대기열 처리된 상태 → ready
+            return res.json({ status: 'ready' });
         }
 
         const listKey = `queue:list:${productId}`;
         const list = await redis.lrange(listKey, 0, -1);
         const idx = list.indexOf(jobId);
 
-        // 2) jobId가 리스트에 없으면 = LPOP 됨 = 내 차례
-        if (idx === -1) {
-            // 재고 확인
-            const redisStock = await redis.get(`product:${productId}:stock`);
-            const stock = parseInt(redisStock || "0", 10);
-
-            if (stock > 0) {
-                return res.json({
-                    status: 'ready',
-                    message: '차례가 되어 구매 가능합니다'
-                });
-            } else {
-                // 재고가 없으면 실패
-                return res.json({
-                    status: 'failed',
-                    error: '재고 소진'
-                });
-            }
-        }
-
-        // 3) 재고 조회
-        const redisStock = await redis.get(`product:${productId}:stock`);
-        const stock = parseInt(redisStock || "0", 10);
-
-        // 4) 첫 번째 대기자이고 재고가 있으면 ready
-        if (idx === 0 && stock > 0) {
-            // 대기열에서 제거
-            await redis.lpop(listKey);
-            await redis.del(`queue:map:${jobId}`);
-
+        // 2) 내가 리스트에 있으면 → 무조건 waiting (재고 체크 X)
+        if (idx >= 0) {
             return res.json({
-                status: 'ready',
-                message: '구매 가능'
+                status: 'waiting',
+                position: idx + 1
             });
         }
 
-        // 5) 아직 대기중
+        // 3) 내가 리스트에서 빠져 있으면 = pop됨 = 내 차례(ready)
         return res.json({
-            status: 'waiting',
-            position: idx + 1,
-            estimatedWait: `약 ${(idx + 1) * 10}초` // 예상 대기 시간
+            status: 'ready',
+            message: '차례가 되었습니다'
         });
 
     } catch (err) {
-        console.error('❌ 대기열 상태 확인 오류:', err);
-        return res.status(500).json({
-            success: false,
-            error: '상태 확인 실패'
-        });
+        console.error(err);
+        return res.status(500).json({ status: 'failed', error: '상태 오류' });
     }
 });
-
 export default router;
