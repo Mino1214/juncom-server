@@ -784,6 +784,7 @@ router.post("/product/:productId/quick-purchase", async (req, res) => {
                 product_id,
                 product_name,
                 product_price,
+                total_amount,
                 stock_snapshot,
                 payment_status,
                 created_at
@@ -791,7 +792,7 @@ router.post("/product/:productId/quick-purchase", async (req, res) => {
             VALUES (
                        $1, $2, $3, $4, $5,
                        $6, $7, $8, $9,
-                       'pending', NOW()
+                       $10, 'pending', NOW()
                    )
         `, [
             orderId,
@@ -801,8 +802,9 @@ router.post("/product/:productId/quick-purchase", async (req, res) => {
             userPhone,
             productId,
             productName,
-            price,
-            stock  // 주문 당시 재고 스냅샷
+            price,            // product_price
+            price,            // total_amount (※ 수량 1개라 단가 == 총금액)
+            stock             // stock_snapshot
         ]);
 
         await client.query("COMMIT");
