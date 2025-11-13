@@ -1162,9 +1162,9 @@ app.get("/api/orders/stats", async (req, res) => {
         const { rows } = await pool.query(`
             SELECT
                 COUNT(*) AS total,
-                COUNT(*) FILTER (WHERE status = 'pending') AS pending,
-                COUNT(*) FILTER (WHERE status = 'paid') AS paid,
-                COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled
+                COUNT(*) FILTER (WHERE payment_status = 'pending') AS pending,
+                COUNT(*) FILTER (WHERE payment_status = 'paid') AS paid,
+                COUNT(*) FILTER (WHERE payment_status = 'cancelled') AS cancelled
             FROM orders
         `);
 
