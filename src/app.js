@@ -15,6 +15,7 @@ import paymentRoutes from './routes/payment.js';
 // 📁 최상단에 import 추가
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+import AddressService from "./address.service.js";
 // 환경변수 로드
 dotenv.config();
 
@@ -1958,6 +1959,54 @@ app.get("api/check/product/:id", async (req, res) => {
     product.is_released = now >= release;
 
     return res.json(product);
+});
+// 괄호 제거 (현대홈타운(102동) → 현대홈타운)
+function clean(addr) {
+    return addr.replace(/\s*\(.*?\)/g, "").trim();
+}
+
+app.post("/api/update-zipcode", async (req, res) => {
+    try {
+        const { rows } = await pool.query(`
+            SELECT id, delivery_address
+            FROM orders
+            WHERE delivery_address IS NOT NULL
+        `);
+
+        const result = [];
+
+        for (const row of rows) {
+            const original = row.delivery_address;
+            const cleaned = clean(original);
+
+            const zipcode = await AddressService.getZipcode(cleaned);
+
+            if (zipcode) {
+                await pool.query(
+                    `UPDATE orders SET zipcode = $1 WHERE id = $2`,
+                    [zipcode, row.id]
+                );
+            }
+
+            result.push({
+                id: row.id,
+                original,
+                cleaned,
+                zipcode,
+                status: zipcode ? "updated" : "not_found"
+            });
+        }
+
+        res.json({
+            success: true,
+            updated: result.filter(r => r.zipcode).length,
+            failed: result.filter(r => !r.zipcode).length,
+            list: result
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 // 구매 가능 시간 체크 API (간단 버전)

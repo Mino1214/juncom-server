@@ -86,6 +86,25 @@ class AddressService {
             throw error;
         }
     }
+
+    // ⭐ 신규: 주소 → 우편번호만 추출
+    async getZipcode(address) {
+        try {
+            const url = `${this.kakaoApiUrl}?query=${encodeURIComponent(address)}&size=1`;
+
+            const response = await axios.get(url, {
+                headers: { 'Authorization': `KakaoAK ${this.kakaoApiKey}` }
+            });
+
+            const doc = response.data.documents?.[0];
+            if (!doc) return null;
+
+            return doc.road_address?.zone_no || doc.address?.zip_code || null;
+        } catch (error) {
+            console.error('❌ 우편번호 조회 실패:', error.message);
+            return null;
+        }
+    }
 }
 
 export default new AddressService();
