@@ -1937,6 +1937,77 @@ const uploadsPath = path.join(__dirname, "uploads");
 // app.use("/api/uploads", express.static("uploads"));
 app.use("/api/uploads", express.static(uploadsPath));
 //
+app.get("api/check/product/:id", async (req, res) => {
+    const { id } = req.params;
+
+    const { rows } = await pool.query(
+        "SELECT * FROM products WHERE id = $1",
+        [id]
+    );
+
+    if (rows.length === 0) {
+        return res.status(404).json({ error: "상품을 찾을 수 없습니다." });
+    }
+
+    const product = rows[0];
+
+    // 서버 기준 시간으로 release 체크 (KST 기준 적용)
+    const now = new Date();
+    const release = new Date(product.release_date);
+
+    product.is_released = now >= release;
+
+    return res.json(product);
+});
+
+// 구매 가능 시간 체크 API (간단 버전)
+app.post("/api/check/purchase-time", async (req, res) => {
+    const { productId } = req.body;
+    const client = await pool.connect();
+
+    try {
+        const result = await client.query(
+            'SELECT release_date, stock, status FROM products WHERE id = $1',
+            [productId]
+        );
+
+        if (!result.rows.length) {
+            return res.status(404).json({
+                success: false,
+                error: "상품을 찾을 수 없습니다"
+            });
+        }
+
+        const product = result.rows[0];
+        const now = new Date();
+        const releaseDate = new Date(product.release_date);
+
+        // 판매 시작 전이면 차단
+        if (releaseDate > now) {
+            return res.status(403).json({
+                success: false,
+                error: "아직 판매가 시작되지 않았습니다",
+                release_date: product.release_date,
+                time_remaining: Math.floor((releaseDate - now) / 1000)
+            });
+        }
+
+        // 판매 가능
+        res.json({
+            success: true,
+            message: "구매 가능한 시간입니다"
+        });
+
+    } catch (error) {
+        console.error("Time check error:", error);
+        res.status(500).json({
+            success: false,
+            error: "시간 확인 중 오류"
+        });
+    } finally {
+        client.release();
+    }
+});
 
 app.post("/api/payment/queue/cancel", async (req, res) => {
     try {
