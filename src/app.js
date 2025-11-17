@@ -12,6 +12,8 @@ import bcrypt from "bcryptjs";
 import emailService from "./email.service.js";
 import addressRoutes from './routes/address.js';
 import paymentRoutes from './routes/payment.js';
+// 🔥 큐 워커 초기화를 위해 import
+import './routes/orderQueue.js';
 // 📁 최상단에 import 추가
 import { fileURLToPath } from "url";
 import { dirname } from "path";

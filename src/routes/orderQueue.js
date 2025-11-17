@@ -25,7 +25,7 @@ const pool = new Pool({
 
 export const orderQueue = new Queue("orderInitQueue", { connection });
 
-// ✅ 주문 생성 워커
+// ✅ 주문 생성 워커 (동시성 방지를 위해 concurrency: 1)
 const worker = new Worker(
     "orderInitQueue",
     async (job) => {
@@ -63,8 +63,16 @@ const worker = new Worker(
             if (!product) throw new Error("상품을 찾을 수 없습니다.");
             if (product.stock <= 0) throw new Error("품절되었습니다.");
 
-            // 2️⃣ 재고 차감
-            await client.query("UPDATE products SET stock = stock - 1 WHERE id = $1", [productId]);
+            // 2️⃣ 재고 차감 (조건부 업데이트로 경쟁 조건 방지)
+            const updateResult = await client.query(
+                "UPDATE products SET stock = stock - 1 WHERE id = $1 AND stock > 0",
+                [productId]
+            );
+
+            // 3️⃣ 실제로 재고가 차감되었는지 확인 (affected rows 체크)
+            if (updateResult.rowCount === 0) {
+                throw new Error("품절되었습니다. (동시 구매로 인해 재고 부족)");
+            }
 
             // 3️⃣ 주문 ID 생성
             const orderId = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -120,7 +128,10 @@ const worker = new Worker(
             client.release();
         }
     },
-    { connection }
+    {
+        connection,
+        concurrency: 1  // 🔥 동시에 하나의 작업만 처리하여 경쟁 조건 방지
+    }
 );
 
 // ✅ 자동 취소 워커
@@ -181,7 +192,10 @@ const cancelWorker = new Worker(
             client.release();
         }
     },
-    { connection }
+    {
+        connection,
+        concurrency: 1  // 🔥 동시에 하나의 작업만 처리하여 경쟁 조건 방지
+    }
 );
 
 // ✅ 로그
