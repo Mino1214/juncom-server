@@ -15,7 +15,7 @@ const connection = new IORedis({
 
 // PostgreSQL 연결
 const pool = new Pool({
-    host: process.env.DB_HOST || "jimo.world",
+    host: process.env.DB_HOST || "cleanupsystems.shop",
     port: 5432,
     database: process.env.DB_NAME || "postgres",
     user: process.env.DB_USER || "postgres",
