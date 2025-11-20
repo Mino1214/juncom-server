@@ -12,7 +12,7 @@ import bcrypt from "bcryptjs";
 import emailService from "./email.service.js";
 import addressRoutes from './routes/address.js';
 import paymentRoutes from './routes/payment.js';
-// 🔥 큐 워커 초기화를 위해 import
+// ✅ Queue만 import (Worker는 별도 프로세스에서 실행)
 import './routes/orderQueue.js';
 // 📁 최상단에 import 추가
 import { fileURLToPath } from "url";
@@ -112,7 +112,7 @@ function requireRole(role) {
 // CORS 설정 추가 (반드시 다른 미들웨어보다 먼저!)
 app.use(cors({
     origin: [
-        'https://jimo.world',
+        // 'https://jimo.world',
         'http://localhost:3000',
         'http://localhost:5174',  // Vite 개발 서버,
         'https://cleanupsystems.shop'
